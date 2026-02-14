@@ -362,7 +362,7 @@ class EEGProcessor:
                 print(f"\nSerial error: {e}")
                 print("Retrying in 3 s...")
                 time.sleep(3)
-            except IOError as e:
+            except (IOError, OSError) as e:
                 print(f"\nIO error: {e}")
                 print("Retrying in 3 s...")
                 time.sleep(3)
@@ -371,17 +371,17 @@ class EEGProcessor:
 # ── Standalone demo ─────────────────────────────────────────────────────────
 def _print_state_change(state):
     label = {
-        MindState.FOCUS: "🧠 FOCUS  → move arm forward",
-        MindState.RELAX: "😌 RELAX  → retract arm",
-        MindState.BLINK: "👁  BLINK  → toggle gripper",
-        MindState.IDLE:  "💤 IDLE",
+        MindState.FOCUS: "FOCUS  -> move arm forward",
+        MindState.RELAX: "RELAX  -> retract arm",
+        MindState.BLINK: "BLINK  -> toggle gripper",
+        MindState.IDLE:  "IDLE",
     }
     print(f"\n>>> STATE: {label.get(state, state)}")
 
 
 def _print_data(attn, med, sig, state):
-    bar_a = "█" * int(attn / 5)
-    bar_m = "█" * int(med / 5)
+    bar_a = "#" * int(attn / 5)
+    bar_m = "#" * int(med / 5)
     print(
         f"  Attn {attn:5.1f} [{bar_a:<20}] | "
         f"Med {med:5.1f} [{bar_m:<20}] | "
@@ -392,7 +392,7 @@ def _print_data(attn, med, sig, state):
 if __name__ == "__main__":
     print("=" * 70)
     print("  MindAssist EEG Processor")
-    print("  Thresholds — Attention ≥ %d, Meditation ≥ %d, Blink ≥ %d" %
+    print("  Thresholds — Attention >= %d, Meditation >= %d, Blink >= %d" %
           (ATTENTION_THRESHOLD, MEDITATION_THRESHOLD, BLINK_THRESHOLD))
     print("  Smoothing window: %d samples, sustain: %d readings" %
           (SMOOTH_WINDOW, SUSTAIN_COUNT))
