@@ -25,9 +25,9 @@ def check_blueutil():
     """Ensure blueutil is installed."""
     _, _, rc = run(["which", "blueutil"])
     if rc != 0:
-        print("ERROR: blueutil not found. Install it with:")
-        print("  brew install blueutil")
-        sys.exit(1)
+        raise RuntimeError(
+            "blueutil not found. Install it with: brew install blueutil"
+        )
 
 
 def find_device_mac():
@@ -112,8 +112,9 @@ def main():
                     break
 
     if not mac:
-        print(f"ERROR: Could not find '{DEVICE_NAME}'. Make sure it's turned on and in range.")
-        sys.exit(1)
+        raise RuntimeError(
+            f"Could not find '{DEVICE_NAME}'. Make sure it's turned on and in range."
+        )
 
     # Pair the device (syntax: --pair MAC PIN)
     print(f"Pairing with '{DEVICE_NAME}' ({mac}) using PIN {PIN}...")
@@ -130,8 +131,9 @@ def main():
         if result.returncode == 0:
             print("Paired successfully!")
         else:
-            print(f"Pairing failed (code {result.returncode}): {result.stderr.strip()}")
-            sys.exit(1)
+            raise RuntimeError(
+                f"Pairing failed (code {result.returncode}): {result.stderr.strip()}"
+            )
 
     # Connect
     print("Connecting...")
@@ -147,4 +149,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)

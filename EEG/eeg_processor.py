@@ -258,6 +258,7 @@ class EEGProcessor:
         self.raw_value = 0
         self.waves = {}
         self.state = MindState.IDLE
+        self.last_data_time = 0
 
     # ── lifecycle ───────────────────────────────────────────────────────
     def start(self):
@@ -276,6 +277,11 @@ class EEGProcessor:
 
     def stop(self):
         self._running = False
+        if self._port and self._port.is_open:
+            try:
+                self._port.close()
+            except Exception:
+                pass
 
     def _cleanup(self, *_args):
         self._running = False
@@ -346,6 +352,8 @@ class EEGProcessor:
                     # Only run state detection + callbacks on eSense packets
                     if not got_esense:
                         continue
+
+                    self.last_data_time = time.time()
 
                     self.state = self.detector.feed(
                         self.attention, self.meditation, blink_val

@@ -23,10 +23,12 @@ from eeg_processor import (
     EEGProcessor, MindState, WAVE_NAMES,
     ATTENTION_THRESHOLD, MEDITATION_THRESHOLD, BLINK_THRESHOLD,
 )
+import bt_reset
 
 # ── Configuration ───────────────────────────────────────────────────────────
 HISTORY = 60          # how many data points to show (≈ seconds of data)
 UPDATE_MS = 200       # chart refresh interval in milliseconds
+STALE_TIMEOUT = 10    # seconds without eSense data before triggering reconnect
 
 # ── Data buffers (thread-safe via deque) ────────────────────────────────────
 timestamps = deque(maxlen=HISTORY)
@@ -40,10 +42,17 @@ wave_hists = {name: deque(maxlen=HISTORY) for name in WAVE_NAMES}
 
 _start_time = time.time()
 
+# ── Shared state for auto-reconnect ────────────────────────────────────────
+proc = None                # current EEGProcessor instance
+_last_data_time = 0.0      # wall-clock time of last eSense callback
+_reconnecting = False
+_reconnect_msg = ""
+
 
 # ── EEGProcessor callbacks ─────────────────────────────────────────────────
 def on_data(attn, med, sig, blink, state):
     """Called ~1/sec by EEGProcessor when eSense data arrives."""
+    global _last_data_time
     t = time.time() - _start_time
     timestamps.append(t)
     attn_hist.append(attn)
@@ -51,13 +60,15 @@ def on_data(attn, med, sig, blink, state):
     sig_hist.append(sig)
     blink_hist.append(blink)
     state_hist.append(state)
+    _last_data_time = time.time()
 
 
-def on_waves(proc):
-    """Pull latest wave values from processor (called in animation loop)."""
-    if proc.waves:
+def on_waves():
+    """Pull latest wave values from the current processor."""
+    p = proc
+    if p and p.waves:
         for name in WAVE_NAMES:
-            wave_hists[name].append(proc.waves.get(name, 0))
+            wave_hists[name].append(p.waves.get(name, 0))
     else:
         for name in WAVE_NAMES:
             if len(wave_hists[name]) > 0:
@@ -91,8 +102,83 @@ STATE_COLORS = {
 }
 
 
+# ── Processor lifecycle helpers ────────────────────────────────────────────
+def _create_processor():
+    """Create a new EEGProcessor wired to the dashboard callbacks."""
+    global proc, _last_data_time
+    proc = EEGProcessor(
+        on_state_change=lambda s: print(f">>> STATE: {s}"),
+        on_data=on_data,
+    )
+    _last_data_time = time.time()  # grace period for new connection
+    return proc
+
+
+def _start_processor():
+    """Start the current processor in a daemon thread."""
+    t = threading.Thread(target=proc.start, daemon=True)
+    t.start()
+
+
+def _stop_processor():
+    """Gracefully stop the current processor."""
+    if proc:
+        proc.stop()
+
+
+# ── Auto-reconnect supervisor ─────────────────────────────────────────────
+def _supervisor():
+    """Background thread: watches for stale data and triggers BT reset + reconnect."""
+    global _reconnecting, _reconnect_msg, _last_data_time
+
+    # Give the initial connection time to establish
+    time.sleep(STALE_TIMEOUT + 5)
+
+    while True:
+        time.sleep(2)
+
+        if _reconnecting:
+            continue
+
+        # Still waiting for the very first data
+        if _last_data_time == 0.0:
+            continue
+
+        elapsed = time.time() - _last_data_time
+        if elapsed < STALE_TIMEOUT:
+            continue
+
+        # ── Stale data detected ──
+        _reconnecting = True
+        print(f"\n\u26a0  No EEG data for {elapsed:.0f}s \u2014 triggering Bluetooth reset...")
+
+        try:
+            _reconnect_msg = "Stopping processor..."
+            _stop_processor()
+            time.sleep(1)
+
+            _reconnect_msg = "Resetting Bluetooth (unpair / re-pair)..."
+            bt_reset.main()
+            time.sleep(2)
+
+            _reconnect_msg = "Reconnecting to MindWave..."
+            _create_processor()
+            _start_processor()
+
+            _reconnect_msg = "Waiting for signal..."
+            time.sleep(STALE_TIMEOUT)
+
+        except Exception as e:
+            print(f"  Reconnect error: {e}")
+            _reconnect_msg = f"Error: {e} \u2014 retrying..."
+            time.sleep(10)
+
+        _reconnecting = False
+        _reconnect_msg = ""
+
+
 # ── Build the figure ────────────────────────────────────────────────────────
-def build_dashboard(proc):
+def build_dashboard():
     fig, (ax_esense, ax_waves) = plt.subplots(
         2, 1, figsize=(12, 7), facecolor="#1a1a2e",
         gridspec_kw={"height_ratios": [1, 1.2]},
@@ -143,6 +229,14 @@ def build_dashboard(proc):
         0.98, 0.05, "Sig: --", transform=ax_esense.transAxes,
         fontsize=9, color="#aaa", ha="right", va="bottom",
     )
+    reconnect_text = ax_esense.text(
+        0.5, 0.5, "", transform=ax_esense.transAxes,
+        fontsize=13, fontweight="bold", color="#FFD93D",
+        ha="center", va="center",
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="#1a1a2e",
+                  edgecolor="#FFD93D", alpha=0.9),
+        visible=False,
+    )
 
     # ── Bottom panel: EEG wave bands ─────────────────────────────────────
     ax_waves.set_title("EEG Wave Bands")
@@ -162,7 +256,7 @@ def build_dashboard(proc):
     def update(_frame):
         # Sync wave history with timestamps
         while len(wave_hists[WAVE_NAMES[0]]) < len(timestamps):
-            on_waves(proc)
+            on_waves()
 
         ts = list(timestamps)
         if not ts:
@@ -217,7 +311,15 @@ def build_dashboard(proc):
         ax_waves.set_xlim(max(0, ts[-1] - HISTORY), ts[-1] + 1)
         ax_waves.set_ylim(0, y_max * 1.1 if y_max > 0 else 100)
 
-        return [line_attn, line_med, blink_scatter, state_text, sig_text] + list(wave_lines.values())
+        # Show reconnect overlay when auto-reconnecting
+        if _reconnecting and _reconnect_msg:
+            reconnect_text.set_text(_reconnect_msg)
+            reconnect_text.set_visible(True)
+        else:
+            reconnect_text.set_visible(False)
+
+        return [line_attn, line_med, blink_scatter, state_text, sig_text,
+                reconnect_text] + list(wave_lines.values())
 
     ani = animation.FuncAnimation(
         fig, update, interval=UPDATE_MS, blit=False, cache_frame_data=False,
@@ -227,18 +329,17 @@ def build_dashboard(proc):
 
 # ── Main ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    proc = EEGProcessor(
-        on_state_change=lambda s: print(f">>> STATE: {s}"),
-        on_data=on_data,
-    )
+    _create_processor()
+    _start_processor()
 
-    # Run EEG reader in background thread
-    eeg_thread = threading.Thread(target=proc.start, daemon=True)
-    eeg_thread.start()
+    # Start the auto-reconnect supervisor
+    sup = threading.Thread(target=_supervisor, daemon=True)
+    sup.start()
 
     print("Starting EEG Dashboard... (close window or Ctrl+C to quit)")
-    fig, ani = build_dashboard(proc)
+    print(f"  Auto-reconnect enabled (timeout: {STALE_TIMEOUT}s)")
+    fig, ani = build_dashboard()
     plt.show()
 
     # Cleanup after window closed
-    proc.stop()
+    _stop_processor()
