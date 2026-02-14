@@ -1,15 +1,10 @@
 import cv2
-import mediapipe as mp
-from mediapipe.tasks import python as mp_tasks
-from mediapipe.tasks.python import vision
 import numpy as np
-
+import os
+import requests
 import serial
 import time
-
-def result_callback(result, output_image, timestamp_ms):
-    global latest_result
-    latest_result = result
+from typing import List, Dict
 
 
 MARGIN = 10  # pixels
@@ -19,95 +14,97 @@ FONT_THICKNESS = 5
 TEXT_COLOR = (255, 0, 0)  # red
 
 
-def visualize(
-    image,
-    detection_result
-) -> np.ndarray:
-    """Draws bounding boxes on the input image and return it.
-    Args:
-        image: The input RGB image.
-        detection_result: The list of all "Detection" entities to be visualize.
-    Returns:
-        Image with bounding boxes.
-    """
-    for detection in detection_result.detections:
+MODAL_ENDPOINT = os.environ.get("MODAL_ENDPOINT", "http://localhost:8080/detect")
+arduino_port = os.environ.get("ARDUINO_PORT", "/dev/cu.usbmodem211301")
+baud_rate = int(os.environ.get("ARDUINO_BAUD", "9600"))
 
-        category = detection.categories[0]
-        category_name = category.category_name
-        probability = round(category.score, 2)
-        if probability < 0.5:  # Skip detections with low confidence
+
+def visualize(image: np.ndarray, detections: List[Dict]) -> np.ndarray:
+    for det in detections:
+        if det["score"] < 0.5:
             continue
-
-        # Draw bounding_box
-        bbox = detection.bounding_box
-        start_point = bbox.origin_x, bbox.origin_y
-        end_point = bbox.origin_x + bbox.width, bbox.origin_y + bbox.height
+        start_point = (det["origin_x"], det["origin_y"]) 
+        end_point = (det["origin_x"] + det["width"], det["origin_y"] + det["height"])
         cv2.rectangle(image, start_point, end_point, TEXT_COLOR, 3)
-
-        # Draw label and score
-        result_text = category_name + ' (' + str(probability) + ')'
-        text_location = (MARGIN + bbox.origin_x,
-                        MARGIN + ROW_SIZE + bbox.origin_y)
-        cv2.putText(image, result_text, text_location, cv2.FONT_HERSHEY_PLAIN,
-                    FONT_SIZE, TEXT_COLOR, FONT_THICKNESS)
-
+        result_text = f"{det['label']} ({det['score']:.2f})"
+        text_location = (MARGIN + det["origin_x"], MARGIN + ROW_SIZE + det["origin_y"]) 
+        cv2.putText(image, result_text, text_location, cv2.FONT_HERSHEY_PLAIN, FONT_SIZE, TEXT_COLOR, FONT_THICKNESS)
     return image
 
-
-arduino_port = "/dev/cu.usbmodem211301"  # Update this to your Arduino's port
-baud_rate = 9600
 
 def send_servo(ser, servo, angle):
     ser.write(f"{servo}{angle}$".encode())
 
 
-try:
-    ser = serial.Serial(arduino_port, baud_rate)
+def call_modal_inference(frame: np.ndarray) -> List[Dict]:
+    # Encode to JPEG
+    ret, buf = cv2.imencode('.jpg', frame)
+    if not ret:
+        return []
+    files = {'file': ('frame.jpg', buf.tobytes(), 'image/jpeg')}
+    try:
+        r = requests.post(MODAL_ENDPOINT, files=files, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        return data.get('detections', [])
+    except Exception as e:
+        print(f"Error calling modal endpoint: {e}")
+        return []
+
+
+def process_and_control(detections: List[Dict]):
+    for det in detections:
+        if det['score'] < 0.5:
+            continue
+
+        print(1)
+        bbox = det
+        cx = bbox['origin_x'] + bbox['width'] / 2
+        cy = bbox['origin_y'] + bbox['height'] / 2
+
+        # Normalized within bbox
+        nx = cx / (bbox['width'] if bbox['width'] else 1)
+        ny = cy / (bbox['height'] if bbox['height'] else 1)
+
+        base = int(180 * nx)
+        shoulder = int(120 - ny * 60)
+        elbow = int(60 + ny * 60)
+
+        # send_servo(ser, 'A', base)
+        # send_servo(ser, 'B', shoulder)
+        # send_servo(ser, 'C', elbow)
+
+
+def main():
+    # try:
+    #     ser = serial.Serial(arduino_port, baud_rate)
+    # except serial.SerialException as e:
+    #     print(f"Could not connect to Arduino on {arduino_port}: {e}")
+    #     ser = None
+
     cap = cv2.VideoCapture(0)
-    latest_result = None
 
-    options = vision.ObjectDetectorOptions(
-        base_options=mp.tasks.BaseOptions(model_asset_path='efficientdet_lite0.tflite'),
-        running_mode=vision.RunningMode.LIVE_STREAM,
-        result_callback=result_callback
-    )
-
-    while True:
-        with vision.ObjectDetector.create_from_options(options) as landmarker:
+    try:
+        while True:
             ret, frame = cap.read()
-            if ret:
-                frame = cv2.flip(frame, 1)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-                result = landmarker.detect_async(mp_image, timestamp_ms=int(cap.get(cv2.CAP_PROP_POS_MSEC)))
-                if latest_result:
-                    for detection in latest_result.detections:
-                        category = detection.categories[0]
-                        probability = round(category.score, 2)
-                        if probability > 0.5:  # Detected with high confidence
-                            bbox = detection.bounding_box
-                            cx = bbox.origin_x + bbox.width / 2
-                            cy = bbox.origin_y + bbox.height / 2
-
-                            nx = cx / bbox.width
-                            ny = cy / bbox.height
-
-                            base = int(180 * nx)
-                            shoulder = int(120 - ny * 60)
-                            elbow = int(60 + ny * 60)
-
-                            send_servo(ser, 'A', base)
-                            send_servo(ser, 'B', shoulder)
-                            send_servo(ser, 'C', elbow)
-
-                            time.sleep(10)
-
-except serial.SerialException as e:
-    print(f"Could not connect to Arduino on {arduino_port}: {e}")
-except KeyboardInterrupt:
-    print("Program interrupted by user. Closing serial port.")
-    if 'ser' in locals() and ser.isOpen():
+            if not ret:
+                continue
+            frame = cv2.flip(frame, 1)
+            detections = call_modal_inference(frame)
+            if detections:
+                process_and_control(detections)
+            vis = visualize(frame, detections)
+            cv2.imshow('frame', vis)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    except KeyboardInterrupt:
+        print("Program interrupted by user. Closing.")
+    finally:
         cap.release()
-        ser.close()
         cv2.destroyAllWindows()
+        # if 'ser' in locals() and ser is not None and ser.isOpen():
+        #     ser.close()
 
 
+if __name__ == '__main__':
+    main()
