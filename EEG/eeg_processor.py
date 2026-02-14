@@ -24,8 +24,8 @@ BAUD_RATE = 115200
 SMOOTH_WINDOW = 5
 
 # Thresholds (0-100 scale from MindWave)
-ATTENTION_THRESHOLD = 65
-MEDITATION_THRESHOLD = 65
+ATTENTION_THRESHOLD = 50
+MEDITATION_THRESHOLD = 50
 BLINK_THRESHOLD = 50          # blink strength threshold
 
 # Sustained-focus duration: how many consecutive readings above threshold
@@ -237,7 +237,7 @@ class EEGProcessor:
     def __init__(self, on_state_change=None, on_data=None):
         """
         on_state_change(state: str)          — called when state transitions
-        on_data(attn, med, signal_q, state)  — called every update cycle
+        on_data(attn, med, signal_q, blink, state) — called every update cycle
         """
         self.on_state_change = on_state_change
         self.on_data = on_data
@@ -354,7 +354,8 @@ class EEGProcessor:
                     # Callbacks
                     if self.on_data:
                         self.on_data(self.attention, self.meditation,
-                                     self.signal_quality, self.state)
+                                     self.signal_quality, blink_val,
+                                     self.state)
 
                     if self.state != self._prev_state:
                         if self.on_state_change:
@@ -382,13 +383,14 @@ def _print_state_change(state):
     print(f"\n>>> STATE: {label.get(state, state)}")
 
 
-def _print_data(attn, med, sig, state):
+def _print_data(attn, med, sig, blink, state):
     bar_a = "#" * int(attn / 5)
     bar_m = "#" * int(med / 5)
+    blink_str = f" BLINK({blink})" if blink >= BLINK_THRESHOLD else ""
     print(
         f"  Attn {attn:5.1f} [{bar_a:<20}] | "
         f"Med {med:5.1f} [{bar_m:<20}] | "
-        f"Sig {sig:3d} | {state}"
+        f"Sig {sig:3d} | {state}{blink_str}"
     )
 
 

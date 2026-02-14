@@ -12,6 +12,8 @@ import threading
 import time
 from collections import deque
 
+import numpy as np
+
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -19,7 +21,7 @@ import matplotlib.animation as animation
 
 from eeg_processor import (
     EEGProcessor, MindState, WAVE_NAMES,
-    ATTENTION_THRESHOLD, MEDITATION_THRESHOLD,
+    ATTENTION_THRESHOLD, MEDITATION_THRESHOLD, BLINK_THRESHOLD,
 )
 
 # ── Configuration ───────────────────────────────────────────────────────────
@@ -32,6 +34,7 @@ attn_hist = deque(maxlen=HISTORY)
 med_hist = deque(maxlen=HISTORY)
 sig_hist = deque(maxlen=HISTORY)
 state_hist = deque(maxlen=HISTORY)
+blink_hist = deque(maxlen=HISTORY)
 
 wave_hists = {name: deque(maxlen=HISTORY) for name in WAVE_NAMES}
 
@@ -39,13 +42,14 @@ _start_time = time.time()
 
 
 # ── EEGProcessor callbacks ─────────────────────────────────────────────────
-def on_data(attn, med, sig, state):
+def on_data(attn, med, sig, blink, state):
     """Called ~1/sec by EEGProcessor when eSense data arrives."""
     t = time.time() - _start_time
     timestamps.append(t)
     attn_hist.append(attn)
     med_hist.append(med)
     sig_hist.append(sig)
+    blink_hist.append(blink)
     state_hist.append(state)
 
 
@@ -124,6 +128,10 @@ def build_dashboard(proc):
                      facecolor="#16213e", edgecolor="#333",
                      labelcolor="white")
 
+    blink_scatter = ax_esense.scatter([], [], color="#FFD93D", s=120,
+                                       marker="|", zorder=5,
+                                       label="Blink")
+
     state_text = ax_esense.text(
         0.98, 0.95, "IDLE", transform=ax_esense.transAxes,
         fontsize=14, fontweight="bold", color="#888",
@@ -165,6 +173,15 @@ def build_dashboard(proc):
         line_med.set_data(ts, list(med_hist))
         ax_esense.set_xlim(max(0, ts[-1] - HISTORY), ts[-1] + 1)
 
+        # Blink markers — show as vertical yellow lines at y=95
+        blinks = list(blink_hist)
+        blink_ts = [ts[i] for i in range(len(blinks)) if blinks[i] >= BLINK_THRESHOLD]
+        blink_ys = [95] * len(blink_ts)
+        if blink_ts:
+            blink_scatter.set_offsets(list(zip(blink_ts, blink_ys)))
+        else:
+            blink_scatter.set_offsets(np.empty((0, 2)))
+
         # State indicator
         if state_hist:
             current_state = state_hist[-1]
@@ -200,7 +217,7 @@ def build_dashboard(proc):
         ax_waves.set_xlim(max(0, ts[-1] - HISTORY), ts[-1] + 1)
         ax_waves.set_ylim(0, y_max * 1.1 if y_max > 0 else 100)
 
-        return [line_attn, line_med, state_text, sig_text] + list(wave_lines.values())
+        return [line_attn, line_med, blink_scatter, state_text, sig_text] + list(wave_lines.values())
 
     ani = animation.FuncAnimation(
         fig, update, interval=UPDATE_MS, blit=False, cache_frame_data=False,
