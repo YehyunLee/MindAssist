@@ -8,6 +8,7 @@ Uses matplotlib animation + EEGProcessor from eeg_processor.py.
 Run:  python EEG/eeg_visualizer.py
 """
 
+import os
 import threading
 import time
 from collections import deque
@@ -22,6 +23,7 @@ import matplotlib.animation as animation
 from eeg_processor import (
     EEGProcessor, MindState, WAVE_NAMES,
     ATTENTION_THRESHOLD, MEDITATION_THRESHOLD, BLINK_THRESHOLD,
+    SERIAL_PORT,
 )
 import bt_reset
 
@@ -61,6 +63,7 @@ def on_data(attn, med, sig, blink, state):
     blink_hist.append(blink)
     state_hist.append(state)
     _last_data_time = time.time()
+    on_waves()  # keep wave_hists in sync with timestamps
 
 
 def on_waves():
@@ -159,7 +162,13 @@ def _supervisor():
 
             _reconnect_msg = "Resetting Bluetooth (unpair / re-pair)..."
             bt_reset.main()
-            time.sleep(2)
+
+            _reconnect_msg = "Waiting for serial port..."
+            for _attempt in range(30):  # up to 30 seconds
+                if os.path.exists(SERIAL_PORT):
+                    time.sleep(2)  # extra settle time
+                    break
+                time.sleep(1)
 
             _reconnect_msg = "Reconnecting to MindWave..."
             _create_processor()
@@ -254,10 +263,6 @@ def build_dashboard():
 
     # ── Animation update ─────────────────────────────────────────────────
     def update(_frame):
-        # Sync wave history with timestamps
-        while len(wave_hists[WAVE_NAMES[0]]) < len(timestamps):
-            on_waves()
-
         ts = list(timestamps)
         if not ts:
             return []

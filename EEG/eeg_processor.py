@@ -21,7 +21,7 @@ SERIAL_PORT = "/dev/tty.MindWaveMobile"
 BAUD_RATE = 115200
 
 # Smoothing: rolling average window size (number of samples)
-SMOOTH_WINDOW = 5
+SMOOTH_WINDOW = 2
 
 # Thresholds (0-100 scale from MindWave)
 ATTENTION_THRESHOLD = 50
@@ -30,7 +30,7 @@ BLINK_THRESHOLD = 50          # blink strength threshold
 
 # Sustained-focus duration: how many consecutive readings above threshold
 # before we commit to a state change (prevents flickering)
-SUSTAIN_COUNT = 3
+SUSTAIN_COUNT = 1
 
 # ── ThinkGear protocol byte codes ──────────────────────────────────────────
 SYNC       = 0xAA
