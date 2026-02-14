@@ -61,7 +61,7 @@ void tune_task(void);
 void action_group_task(void);
 void recv_handler(void);
 void servos_middle(void); //中位任务
-
+void set_pose(uint8_t s0, uint8_t s1, uint8_t s2, uint8_t s3, uint8_t s4, uint8_t s5);
 // comment
 
 void setup() {
@@ -87,35 +87,61 @@ void setup() {
 }
 
 void loop() {
-  static unsigned long lastChange = 0;
-  static bool positionToggle = false;
-
-  // Change target position every 2 seconds (2000ms)
-  if (millis() - lastChange > 2000) {
-    lastChange = millis();
-    positionToggle = !positionToggle;
+  static unsigned long lastMove = 0;
+  static int step = 0;
+  
+  // Change step every 2 seconds to give servos time to arrive
+  if (millis() - lastMove > 2000) {
+    lastMove = millis();
     
-    if (positionToggle) {
-      // Position A: Wide open / forward
-      for (int i = 0; i < 6; i++) knob_angles[i] = 100; 
-      rgbs[0] = CRGB::Red;
-    } else {
-      // Position B: Closed / back
-      for (int i = 0; i < 6; i++) knob_angles[i] = 135;
-      rgbs[0] = CRGB::Green;
+    switch(step) {
+      case 0: // STEP 0: Move to Home / Ready position
+        // All joints at middle, gripper open (assuming 0 is open)
+        set_pose(0, 90, 90, 90, 90, 90); 
+        rgbs[0] = CRGB::Blue;
+        step = 1;
+        break;
+
+      case 1: // STEP 1: Reach Forward
+        // Lower the shoulder/elbow to reach out
+        set_pose(0, 140, 30, 10, 90, 90); 
+        rgbs[0] = CRGB::Yellow;
+        step = 2;
+        break;
+
+      case 2: // STEP 2: Grab
+        // Keep same pose, but close the gripper (Servo 5)
+        set_pose(80, 140, 30, 10, 90, 90); 
+        rgbs[0] = CRGB::Red;
+        step = 3;
+        break;
+
+      case 3: // STEP 3: Lift Up
+        // Keep gripper closed, lift the arm back up
+        set_pose(80, 90, 90, 90, 90, 90); 
+        rgbs[0] = CRGB::Green;
+        step = 0; // Loop back to start (will drop item at step 0)
+        break;
     }
     FastLED.show();
   }
 
-  // Call your existing control function to handle the smooth movement
-  // Note: Ensure g_mode is set to MODE_KNOB so it reads knob_angles
-  g_mode = MODE_KNOB;
-  servo_control(); 
+  // Keep these running every loop iteration
+  servo_control();
+  tune_task();
 }
 
 
 
-
+void set_pose(uint8_t s0, uint8_t s1, uint8_t s2, uint8_t s3, uint8_t s4, uint8_t s5) {
+  knob_angles[0] = s0;
+  knob_angles[1] = s1;
+  knob_angles[2] = s2;
+  knob_angles[3] = s3;
+  knob_angles[4] = s4;
+  knob_angles[5] = s5;
+  g_mode = MODE_KNOB; // Ensure the logic uses these angles
+}
 
 /*
 void setup() {
