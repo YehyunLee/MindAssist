@@ -56,7 +56,10 @@ def visualize(
 
 arduino_port = "/dev/cu.usbmodem211301"  # Update this to your Arduino's port
 baud_rate = 9600
-detected = 0
+
+def send_servo(ser, servo, angle):
+    ser.write(f"{servo}{angle}$".encode())
+
 
 try:
     ser = serial.Serial(arduino_port, baud_rate)
@@ -77,23 +80,32 @@ try:
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
                 result = landmarker.detect_async(mp_image, timestamp_ms=int(cap.get(cv2.CAP_PROP_POS_MSEC)))
                 if latest_result:
-                    detected = 0
                     for detection in latest_result.detections:
                         category = detection.categories[0]
                         probability = round(category.score, 2)
                         if probability > 0.5:  # Detected with high confidence
-                            detected = 1
-                            break
-                    ser.write(f"{detected}\n".encode())
-                    # TODO: add buffer
-                    time.sleep(0.1)
-                    detected = 0
+                            bbox = detection.bounding_box
+                            cx = bbox.origin_x + bbox.width / 2
+                            cy = bbox.origin_y + bbox.height / 2
+
+                            nx = cx / bbox.width
+                            ny = cy / bbox.height
+
+                            base = int(180 * nx)
+                            shoulder = int(120 - ny * 60)
+                            elbow = int(60 + ny * 60)
+
+                            send_servo(ser, 'A', base)
+                            send_servo(ser, 'B', shoulder)
+                            send_servo(ser, 'C', elbow)
+
+                            time.sleep(10)
 
 except serial.SerialException as e:
     print(f"Could not connect to Arduino on {arduino_port}: {e}")
 except KeyboardInterrupt:
     print("Program interrupted by user. Closing serial port.")
-    if 'ser' in locals(): # and ser.isOpen():
+    if 'ser' in locals() and ser.isOpen():
         cap.release()
         ser.close()
         cv2.destroyAllWindows()
