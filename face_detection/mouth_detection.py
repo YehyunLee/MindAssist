@@ -12,11 +12,8 @@ def result_callback(result, output_image, timestamp_ms):
 
 
 def draw_landmarks(frame, result):
-    if result.face_landmarks is None:
+    if not result.face_landmarks:
         return frame
-    
-    pprint.pprint(result)
-    exit(0)
     
     h, w, _ = frame.shape
 
@@ -48,14 +45,13 @@ if __name__ == '__main__':
         result_callback=result_callback
     )
 
-    while True:
-        with vision.FaceLandmarker.create_from_options(options) as landmarker:
-        # with vision.HandLandmarker.create_from_options(options) as landmarker:
+    with vision.FaceLandmarker.create_from_options(options) as landmarker:
+        while True:
             ret, frame = cap.read()
             if ret:
                 frame = cv2.flip(frame, 1)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-                result = landmarker.detect_async(mp_image, timestamp_ms=int(cap.get(cv2.CAP_PROP_POS_MSEC)))
+                landmarker.detect_async(mp_image, timestamp_ms=int(time.time() * 1000))
                 if latest_result and latest_result.face_landmarks: 
                     frame = draw_landmarks(frame, latest_result)
                 cv2.imshow('Face Landmarker Live', frame)
