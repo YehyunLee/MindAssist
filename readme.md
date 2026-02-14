@@ -52,3 +52,5 @@ MindWave Mobile 2 ──Bluetooth──▸ Laptop (Python)
 
 **Demo narrative:** Feeding workflow — clamp a lightweight spoon into the gripper; sequence is *scoop → lift → align with mouth → return*. Secondary "object grab" script for variety.
 But for now, we are testing wihtout spoon.
+
+Built with Codex.
