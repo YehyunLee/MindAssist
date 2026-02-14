@@ -1,8 +1,10 @@
-"""
-MindAssist EEG Processor
-Connects to MindWave Mobile 2 via Bluetooth serial, decodes ThinkGear
-packets, smooths Attention/Meditation signals, and emits control states
-(FOCUS, RELAX, BLINK, IDLE) for downstream robotic-arm control.
+"""MindAssist EEG Processor
+
+Connects to MindWave Mobile 2 via Bluetooth serial, parses the ThinkGear
+binary protocol directly, smooths Attention/Meditation signals, and emits
+control states (FOCUS, RELAX, BLINK, IDLE) for downstream robotic-arm control.
+
+No external EEG libraries required — only pyserial.
 """
 
 import signal
