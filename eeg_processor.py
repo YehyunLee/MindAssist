@@ -127,11 +127,112 @@ class StateDetector:
         return self.state
 
 
-# ── Callback interface ──────────────────────────────────────────────────────
+# ── ThinkGear packet parser ────────────────────────────────────────────────
+def parse_payload(payload):
+    """Parse a ThinkGear payload into a dict of decoded values.
+
+    Returns a dict that may contain keys:
+        poor_signal, attention, meditation, blink, raw_value, waves
+    """
+    result = {}
+    i = 0
+    while i < len(payload):
+        code = payload[i]
+        i += 1
+
+        # Skip extended code bytes
+        while code == EXCODE and i < len(payload):
+            code = payload[i]
+            i += 1
+
+        if code < 0x80:
+            # Single-byte value
+            if i >= len(payload):
+                break
+            value = payload[i]
+            i += 1
+
+            if code == CODE_POOR_SIGNAL:
+                result['poor_signal'] = value
+            elif code == CODE_ATTENTION:
+                result['attention'] = value
+            elif code == CODE_MEDITATION:
+                result['meditation'] = value
+            elif code == CODE_BLINK:
+                result['blink'] = value
+        else:
+            # Multi-byte value
+            if i >= len(payload):
+                break
+            vlength = payload[i]
+            i += 1
+            if i + vlength > len(payload):
+                break
+            value = payload[i:i + vlength]
+            i += vlength
+
+            if code == CODE_RAW_VALUE and len(value) >= 2:
+                raw = value[0] * 256 + value[1]
+                if raw >= 32768:
+                    raw -= 65536
+                result['raw_value'] = raw
+            elif code == CODE_ASIC_EEG_POWER and len(value) >= 24:
+                waves = {}
+                for j, name in enumerate(WAVE_NAMES):
+                    offset = j * 3
+                    waves[name] = (value[offset] * 255 * 255 +
+                                   value[offset + 1] * 255 +
+                                   value[offset + 2])
+                result['waves'] = waves
+
+    return result
+
+
+def read_packet(ser):
+    """Block until a valid ThinkGear packet is read from serial.
+
+    Returns parsed dict or None on timeout/error.
+    """
+    # Wait for double-sync
+    while True:
+        b = ser.read(1)
+        if len(b) == 0:
+            return None
+        if b[0] != SYNC:
+            continue
+        b = ser.read(1)
+        if len(b) == 0:
+            return None
+        if b[0] == SYNC:
+            break
+
+    # Read plength (skip if 170 = another sync)
+    while True:
+        b = ser.read(1)
+        if len(b) == 0:
+            return None
+        plength = b[0]
+        if plength != 170:
+            break
+    if plength > 170:
+        return None
+
+    # Read payload + checksum
+    data = ser.read(plength + 1)
+    if len(data) != plength + 1:
+        return None
+
+    payload = data[:plength]
+    # (checksum validation skipped — matches working mindwave.py behavior)
+
+    return parse_payload(payload)
+
+
+# ── Main processor ─────────────────────────────────────────────────────────
 class EEGProcessor:
     """
     Main processor: reads ThinkGear packets, smooths, detects state,
-    and invokes a callback with every new state + raw values.
+    and invokes callbacks with every new state + raw values.
     """
     def __init__(self, on_state_change=None, on_data=None):
         """
