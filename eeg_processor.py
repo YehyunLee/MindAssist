@@ -253,8 +253,10 @@ class EEGProcessor:
         # Latest values (accessible from outside)
         self.attention = 0.0
         self.meditation = 0.0
-        self.signal_quality = 200   # 200 = no contact
+        self.signal_quality = 255
         self.blink = 0
+        self.raw_value = 0
+        self.waves = {}
         self.state = MindState.IDLE
 
     # ── lifecycle ───────────────────────────────────────────────────────
@@ -296,53 +298,55 @@ class EEGProcessor:
                 self._port = serial.Serial(SERIAL_PORT, baudrate=BAUD_RATE, timeout=5)
                 print("Connected! Reading EEG data (press 'q' + Enter to quit)...\n")
 
-                tg = SerialThinkGear(self._port)
-                blink_val = 0
                 waiting_printed = False
 
                 while self._running:
-                    data_points = tg.read()
-                    got_esense = False  # did this batch have attention/meditation?
+                    packet = read_packet(self._port)
+                    if packet is None:
+                        continue
 
-                    for pt in data_points:
-                        if isinstance(pt, thinkgear.PoorSignalDataPoint):
-                            self.signal_quality = pt.value
-                            if pt.value > 0 and not waiting_printed:
-                                print(f"  Waiting for good signal... "
-                                      f"(quality={pt.value}, 0=good, 200=off head)")
-                                print("  Tip: adjust ear clip and forehead sensor.")
-                                waiting_printed = True
-                            elif pt.value == 0 and waiting_printed:
-                                print("  Signal acquired! Reading EEG data...")
-                                waiting_printed = False
+                    # Update signal quality
+                    if 'poor_signal' in packet:
+                        self.signal_quality = packet['poor_signal']
+                        if self.signal_quality > 0 and not waiting_printed:
+                            print(f"  Waiting for good signal... "
+                                  f"(quality={self.signal_quality}, 0=good, 200=off head)")
+                            print("  Tip: adjust ear clip and forehead sensor.")
+                            waiting_printed = True
+                        elif self.signal_quality == 0 and waiting_printed:
+                            print("  Signal acquired! Reading EEG data...")
+                            waiting_printed = False
 
-                        elif isinstance(pt, thinkgear.AttentionDataPoint):
-                            self.attention = self.attn_smoother.update(pt.value)
-                            got_esense = True
+                    # Update raw value
+                    if 'raw_value' in packet:
+                        self.raw_value = packet['raw_value']
 
-                        elif isinstance(pt, thinkgear.MeditationDataPoint):
-                            self.meditation = self.med_smoother.update(pt.value)
-                            got_esense = True
+                    # Update wave bands
+                    if 'waves' in packet:
+                        self.waves = packet['waves']
 
-                        elif isinstance(pt, thinkgear.BlinkDataPoint):
-                            blink_val = pt.value
-                            self.blink = blink_val
+                    # Update blink
+                    blink_val = 0
+                    if 'blink' in packet:
+                        blink_val = packet['blink']
+                        self.blink = blink_val
 
-                        elif isinstance(pt, thinkgear.EegDataPoints):
-                            pass  # EEG band powers — available if needed later
+                    # Update attention / meditation (eSense values)
+                    got_esense = False
+                    if 'attention' in packet:
+                        self.attention = self.attn_smoother.update(packet['attention'])
+                        got_esense = True
+                    if 'meditation' in packet:
+                        self.meditation = self.med_smoother.update(packet['meditation'])
+                        got_esense = True
 
-                        elif isinstance(pt, thinkgear.RawDataPoint):
-                            continue  # skip raw wave (too noisy to print)
-
-                    # Only process state + callbacks when we got real eSense data
+                    # Only run state detection + callbacks on eSense packets
                     if not got_esense:
                         continue
 
-                    # Run state detection after processing the batch
                     self.state = self.detector.feed(
                         self.attention, self.meditation, blink_val
                     )
-                    blink_val = 0  # reset blink after consuming
 
                     # Callbacks
                     if self.on_data:
