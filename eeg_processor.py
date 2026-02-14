@@ -10,15 +10,15 @@ No external EEG libraries required — only pyserial.
 import signal
 import sys
 import time
+import struct
 import threading
 from collections import deque
 
 import serial
-import thinkgear
 
 # ── Configuration ───────────────────────────────────────────────────────────
 SERIAL_PORT = "/dev/tty.MindWaveMobile"
-BAUD_RATE = 57600
+BAUD_RATE = 115200
 
 # Smoothing: rolling average window size (number of samples)
 SMOOTH_WINDOW = 5
@@ -32,18 +32,18 @@ BLINK_THRESHOLD = 50          # blink strength threshold
 # before we commit to a state change (prevents flickering)
 SUSTAIN_COUNT = 3
 
-# ── Serial-backed ThinkGear reader ─────────────────────────────────────────
-class SerialThinkGear(thinkgear.ThinkGearProtocol):
-    """ThinkGearProtocol subclass that reads from a serial port."""
-    def __init__(self, serial_port, debug=False):
-        super().__init__(debug=debug)
-        self._serial = serial_port
+# ── ThinkGear protocol byte codes ──────────────────────────────────────────
+SYNC       = 0xAA
+EXCODE     = 0x55
+CODE_POOR_SIGNAL    = 0x02
+CODE_ATTENTION      = 0x04
+CODE_MEDITATION     = 0x05
+CODE_BLINK          = 0x16
+CODE_RAW_VALUE      = 0x80
+CODE_ASIC_EEG_POWER = 0x83
 
-    def _recv(self, size=1):
-        data = self._serial.read(size)
-        if len(data) != size:
-            raise IOError("Serial read timed out — is the headset on and paired?")
-        return data
+WAVE_NAMES = ['delta', 'theta', 'low-alpha', 'high-alpha',
+              'low-beta', 'high-beta', 'low-gamma', 'mid-gamma']
 
 
 # ── Signal smoother ─────────────────────────────────────────────────────────
