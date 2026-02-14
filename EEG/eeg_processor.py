@@ -262,12 +262,15 @@ class EEGProcessor:
     # ── lifecycle ───────────────────────────────────────────────────────
     def start(self):
         self._running = True
-        signal.signal(signal.SIGINT,  self._cleanup)
-        signal.signal(signal.SIGTERM, self._cleanup)
 
-        # Input listener for graceful quit
-        t = threading.Thread(target=self._input_listener, daemon=True)
-        t.start()
+        # Signal handlers only work from the main thread
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT,  self._cleanup)
+            signal.signal(signal.SIGTERM, self._cleanup)
+
+            # Input listener for graceful quit (only useful in main thread)
+            t = threading.Thread(target=self._input_listener, daemon=True)
+            t.start()
 
         self._connect_and_read()
 
