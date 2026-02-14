@@ -100,48 +100,53 @@ void setup() {
 void loop() {
   static unsigned long lastMove = 0;
   static int step = 0;
-  
-  // Change step every 2 seconds to give servos time to arrive
+
+  // --- Read step from Serial (expects: "0\n", "1\n", "2\n", "3\n", etc.) ---
+  if (Serial.available() > 0) {
+    long v = Serial.parseInt();          // parses the first integer in the buffer
+    while (Serial.available() > 0) {
+      Serial.read();                     // clear remainder (newline/extra chars)
+    }
+
+    // Update only if parseInt() actually found something
+    // (parseInt returns 0 if it times out or if the number is literally 0)
+    // So we accept 0..3 explicitly:
+    if (v >= 0 && v <= 3) {
+      step = (int)v;
+      // optional feedback:
+      // Serial.print("step set to: "); Serial.println(step);
+    }
+  }
+
+  // Change pose every 2 seconds to give servos time to arrive
   if (millis() - lastMove > 2000) {
     lastMove = millis();
-    
-    switch(step) {
-      case 0: // STEP 0: Move to Home / Ready position
-        // All joints at middle, gripper open (assuming 0 is open)
-        //set_pose(0, 90, 90, 90, 90, 90); 
-        set_pose(0,90,0,90,90,90);
+
+    switch (step) {
+      case 0:
+        set_pose(0, 90, 0, 90, 90, 90);
         rgbs[0] = CRGB::Blue;
-        step = 1;
         break;
 
-      case 1: // STEP 1: Reach Forward
-        // Lower the shoulder/elbow to reach out
-        //set_pose(0, 160, 30, 0, 90, 90); 
-        set_pose(0,120,0,0,0,90);
+      case 1:
+        set_pose(0, 120, 0, 0, 0, 90);
         rgbs[0] = CRGB::Yellow;
-        step = 2;
         break;
 
-      case 2: // STEP 2: Grab
-        // Keep same pose, but close the gripper (Servo 5)
-        //set_pose(80, 160, 30, 0, 90, 90); 
-        set_pose(90,120,0,0,0,90);
+      case 2:
+        set_pose(90, 120, 0, 0, 0, 90);
         rgbs[0] = CRGB::Red;
-        step = 3;
         break;
 
-      case 3: // STEP 3: Lift Up
-        // Keep gripper closed, lift the arm back up
-        //set_pose(80, 90, 90, 90, 90, 90); 
-        set_pose(90,90,0,90,90,90);
+      case 3:
+        set_pose(90, 90, 0, 90, 90, 90);
         rgbs[0] = CRGB::Green;
-        step = 0; // Loop back to start (will drop item at step 0)
         break;
     }
+
     FastLED.show();
   }
 
-  // Keep these running every loop iteration
   servo_control();
   tune_task();
 }
