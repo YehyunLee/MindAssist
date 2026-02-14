@@ -1,13 +1,54 @@
 # MindAssist
 
-Mind-controlled assistive robotic arm that pairs the NeuroSky MindWave Mobile EEG headset with the Hiwonder miniArm kit to let users trigger feeding and grasping routines through simple focus/relax/blink cues.
+A **non-invasive, low-cost, mind-controlled robotic arm** using the NeuroSky MindWave Mobile 2 EEG headset to help people with limited mobility perform assistive tasks such as feeding and simple object grasping — purely through thought.
 
+Inspired by Neuralink's CONVOY trial demo, recreated with affordable consumer hardware and open-source software.
 
-Problem statement:
-MindAssist - “One in three U.S. stroke survivors faces food insecurity—nearly twice the rate of people without stroke—because they often can’t reliably feed themselves without assistance (American Heart Association, 2022). We’re building a mind-controlled assistive arm so survivors can trigger an entire feeding routine with simple mental states, restoring autonomy even when fine motor control is gone.”
+## Problem Statement
 
+> "One in three U.S. stroke survivors faces food insecurity — nearly twice the rate of people without stroke — because they often can't reliably feed themselves without assistance (American Heart Association, 2022). We're building a mind-controlled assistive arm so survivors can trigger an entire feeding routine with simple mental states, restoring autonomy even when fine motor control is gone."
 
 ## Hardware
-- NeuroSky MindWave Mobile EEG headset
-- Hiwonder / LewanSoul miniArm Standard Kit (5-DOF robotic arm with digital servos + Bluetooth)
-- miniArm Atmega328 controller board (kit default)
+
+- **EEG**: NeuroSky MindWave Mobile 2 (provides Attention, Meditation, and Blink values)
+- **Robotic arm**: Hiwonder / LewanSoul miniArm Standard Kit — 5 DOF, high-precision digital servos, built-in Bluetooth, 6-channel knob controller for manual testing
+- **Microcontroller**: miniArm Atmega328 controller board (kit default) / Arduino Uno R3 clone (backup)
+- **Extras included with kit**: ESP32-Cam, glowing ultrasonic sensor, touch sensor, acceleration sensor
+
+## Control Concept
+
+| Mental State | Threshold | Action |
+|---|---|---|
+| **Focus** (high Attention) | > 65–75 | Move arm forward / lift / extend toward target |
+| **Relax** (high Meditation) | > 65–75 | Retract arm / open gripper / return to rest |
+| **Blink** (strong blink) | detected | Close gripper (grab spoon/object) or trigger action |
+
+## Architecture
+
+```
+MindWave Mobile 2 ──Bluetooth──▸ Laptop (Python)
+                                    │
+                              EEG parsing &
+                              state machine (FSM)
+                                    │
+                              USB Serial commands
+                                    │
+                              Arduino miniArm ──▸ Servos
+```
+
+1. **EEG ingestion** — MindWave ↔ Bluetooth ↔ Python service parsing ThinkGear binary protocol directly (`pyserial`, no external EEG libs).
+2. **State → motion planner** — Python FSM converts `FOCUS` / `RELAX` / `BLINK` into commands (`POS1`, `FEED`, `HOME`). Auto-completes the feeding routine if focus is sustained > 2 s.
+3. **Robot layer** — Arduino serial parser + `Servo` library with preset joint positions (`reach()`, `lift()`, `feed()`, `home()`).
+
+## Documentation & Links
+
+- [NeuroSky MindWave Mobile & Arduino tutorial](https://developer.neurosky.com/docs/doku.php?id=mindwave_mobile_and_arduino)
+- [Hiwonder miniArm wiki](https://wiki.hiwonder.com/projects/miniArm/en/latest/)
+- [miniArm Arduino IDE setup](https://docs.hiwonder.com/projects/miniArm/en/latest/docs/2.Set_Arduino_Environment.html)
+- [MindWave Mobile 2 (RobotShop)](https://ca.robotshop.com/products/neurosky-mindwave-mobile-2-eeg-sensor-starter-kit)
+- [miniArm Standard Kit (Amazon)](https://www.amazon.com/dp/B0DCB8KLGT?_encoding=UTF8&th=1)
+
+## Hackathon (TreeHacks 2026)
+
+**Demo narrative:** Feeding workflow — clamp a lightweight spoon into the gripper; sequence is *scoop → lift → align with mouth → return*. Secondary "object grab" script for variety.
+But for now, we are testing wihtout spoon.
