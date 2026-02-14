@@ -73,11 +73,22 @@ void setup() {
     servos[i].attach(servoPins[i]);
   }
 
+  for (int i = 0; i < 6; ++i) set_pose(0, 90, 90, 135, 90, 90); 
+  
+  tone(buzzerPin, 1000);
+  delay(100);
+  noTone(buzzerPin);
+  tone(buzzerPin, 2000);
+  delay(100);
+  noTone(buzzerPin);
+  /*
   // Set initial position to 90 degrees
   for (int i = 0; i < 6; ++i) {
     knob_angles[i] = 90;
     servo_angles[i] = 90;
   }
+  */
+  
 
   FastLED.addLeds<WS2812, rgbPin, GRB>(rgbs, 1);
   rgbs[0] = CRGB::Blue;
@@ -97,28 +108,32 @@ void loop() {
     switch(step) {
       case 0: // STEP 0: Move to Home / Ready position
         // All joints at middle, gripper open (assuming 0 is open)
-        set_pose(0, 90, 90, 90, 90, 90); 
+        //set_pose(0, 90, 90, 90, 90, 90); 
+        set_pose(0,90,0,90,90,90);
         rgbs[0] = CRGB::Blue;
         step = 1;
         break;
 
       case 1: // STEP 1: Reach Forward
         // Lower the shoulder/elbow to reach out
-        set_pose(0, 140, 30, 10, 90, 90); 
+        //set_pose(0, 160, 30, 0, 90, 90); 
+        set_pose(0,120,0,120,0,90);
         rgbs[0] = CRGB::Yellow;
         step = 2;
         break;
 
       case 2: // STEP 2: Grab
         // Keep same pose, but close the gripper (Servo 5)
-        set_pose(80, 140, 30, 10, 90, 90); 
+        //set_pose(80, 160, 30, 0, 90, 90); 
+        set_pose(90,120,0,120,0,90);
         rgbs[0] = CRGB::Red;
         step = 3;
         break;
 
       case 3: // STEP 3: Lift Up
         // Keep gripper closed, lift the arm back up
-        set_pose(80, 90, 90, 90, 90, 90); 
+        //set_pose(80, 90, 90, 90, 90, 90); 
+        set_pose(90,90,0,90,90,90);
         rgbs[0] = CRGB::Green;
         step = 0; // Loop back to start (will drop item at step 0)
         break;
