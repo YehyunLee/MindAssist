@@ -4,6 +4,7 @@ Forget and re-pair the MindWave Mobile Bluetooth device on macOS.
 Requires: blueutil (brew install blueutil)
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -116,34 +117,58 @@ def main():
             f"Could not find '{DEVICE_NAME}'. Make sure it's turned on and in range."
         )
 
-    # Pair the device (syntax: --pair MAC PIN)
-    print(f"Pairing with '{DEVICE_NAME}' ({mac}) using PIN {PIN}...")
-    out, err, rc = run(["blueutil", "--pair", mac, PIN])
-    if rc == 0:
-        print("Paired successfully!")
-    else:
-        # Fallback: pipe PIN via stdin for interactive prompt
-        print(f"Direct pair failed ({err}), trying with stdin PIN...")
+    # Pair the device with retries
+    MAX_PAIR_ATTEMPTS = 5
+    paired = False
+    for attempt in range(1, MAX_PAIR_ATTEMPTS + 1):
+        print(f"Pairing attempt {attempt}/{MAX_PAIR_ATTEMPTS} with '{DEVICE_NAME}' ({mac})...")
+        out, err, rc = run(["blueutil", "--pair", mac, PIN])
+        if rc == 0:
+            print("Paired successfully!")
+            paired = True
+            break
+
+        # Fallback: pipe PIN via stdin
         result = subprocess.run(
             ["blueutil", "--pair", mac],
             input=PIN + "\n", capture_output=True, text=True
         )
         if result.returncode == 0:
             print("Paired successfully!")
-        else:
-            raise RuntimeError(
-                f"Pairing failed (code {result.returncode}): {result.stderr.strip()}"
-            )
+            paired = True
+            break
 
-    # Connect
-    print("Connecting...")
-    time.sleep(1)
-    out, err, rc = run(["blueutil", "--connect", mac])
-    if rc == 0:
-        print(f"Connected to '{DEVICE_NAME}'!")
-    else:
-        print(f"Connect returned code {rc}: {err}")
-        print("You may need to connect manually or run your EEG script.")
+        print(f"  Attempt {attempt} failed: {err or result.stderr.strip()}")
+        if attempt < MAX_PAIR_ATTEMPTS:
+            print("  Cycling Bluetooth and retrying...")
+            run(["blueutil", "--power", "0"])
+            time.sleep(2)
+            run(["blueutil", "--power", "1"])
+            time.sleep(3)
+
+    if not paired:
+        raise RuntimeError(
+            f"Pairing failed after {MAX_PAIR_ATTEMPTS} attempts. "
+            f"Make sure '{DEVICE_NAME}' is on and in range."
+        )
+
+    # Connect (may need two rounds on macOS to fully establish serial port)
+    for c in range(1, 4):
+        print(f"Connecting (attempt {c}/3)...")
+        time.sleep(2)
+        out, err, rc = run(["blueutil", "--connect", mac])
+        if rc == 0:
+            print(f"Connected to '{DEVICE_NAME}'!")
+        else:
+            print(f"Connect returned code {rc}: {err}")
+
+        # Check if the serial port appeared
+        time.sleep(2)
+        if os.path.exists("/dev/tty.MindWaveMobile"):
+            print("Serial port /dev/tty.MindWaveMobile is ready!")
+            break
+        else:
+            print("  Serial port not yet available, retrying connect...")
 
     print("\nDone.")
 

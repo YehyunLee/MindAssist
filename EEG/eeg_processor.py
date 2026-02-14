@@ -127,6 +127,58 @@ class StateDetector:
         return self.state
 
 
+# ── Wave-band estimator (fallback when eSense is unavailable) ─────────────
+class WaveEstimator:
+    """Estimates attention/meditation from EEG wave-band powers.
+
+    Uses classic neurofeedback ratios:
+      - Engagement index  (attention proxy):  beta+low_gamma / (theta+alpha)
+      - Relaxation index  (meditation proxy): (alpha+theta)  / beta
+    Values are self-calibrated to 0–100 via percentile rank over a
+    rolling history window.
+    """
+
+    def __init__(self, history=30):
+        self._attn_ratios = deque(maxlen=history)
+        self._med_ratios = deque(maxlen=history)
+        self.attention = 50.0
+        self.meditation = 50.0
+
+    def update(self, waves):
+        """Feed new wave-band dict; updates .attention and .meditation."""
+        if not waves:
+            return
+
+        theta = waves.get('theta', 0)
+        low_alpha = waves.get('low-alpha', 0)
+        high_alpha = waves.get('high-alpha', 0)
+        low_beta = waves.get('low-beta', 0)
+        high_beta = waves.get('high-beta', 0)
+        low_gamma = waves.get('low-gamma', 0)
+
+        alpha = low_alpha + high_alpha
+        beta = low_beta + high_beta
+
+        # Engagement index → attention proxy
+        attn_ratio = (beta + low_gamma) / (theta + alpha + 1)
+        self._attn_ratios.append(attn_ratio)
+
+        # Relaxation index → meditation proxy
+        med_ratio = (alpha + theta) / (beta + 1)
+        self._med_ratios.append(med_ratio)
+
+        self.attention = self._to_percentile(attn_ratio, self._attn_ratios)
+        self.meditation = self._to_percentile(med_ratio, self._med_ratios)
+
+    @staticmethod
+    def _to_percentile(value, history):
+        """Map *value* to 0–100 based on its rank in *history*."""
+        if len(history) < 3:
+            return 50.0
+        rank = sum(1 for v in history if v <= value)
+        return min(100.0, max(0.0, (rank / len(history)) * 100.0))
+
+
 # ── ThinkGear packet parser ────────────────────────────────────────────────
 def parse_payload(payload):
     """Parse a ThinkGear payload into a dict of decoded values.
@@ -245,6 +297,7 @@ class EEGProcessor:
         self.attn_smoother = SignalSmoother()
         self.med_smoother = SignalSmoother()
         self.detector = StateDetector()
+        self.wave_estimator = WaveEstimator()
 
         self._port = None
         self._running = False
@@ -333,6 +386,7 @@ class EEGProcessor:
                     # Update wave bands
                     if 'waves' in packet:
                         self.waves = packet['waves']
+                        self.wave_estimator.update(self.waves)
 
                     # Update blink
                     blink_val = 0
@@ -341,12 +395,20 @@ class EEGProcessor:
                         self.blink = blink_val
 
                     # Update attention / meditation (eSense values)
+                    # Native eSense reports 0 when signal is too poor;
+                    # fall back to wave-band estimates in that case.
                     got_esense = False
                     if 'attention' in packet:
-                        self.attention = self.attn_smoother.update(packet['attention'])
+                        raw_attn = packet['attention']
+                        if raw_attn == 0 and self.waves:
+                            raw_attn = self.wave_estimator.attention
+                        self.attention = self.attn_smoother.update(raw_attn)
                         got_esense = True
                     if 'meditation' in packet:
-                        self.meditation = self.med_smoother.update(packet['meditation'])
+                        raw_med = packet['meditation']
+                        if raw_med == 0 and self.waves:
+                            raw_med = self.wave_estimator.meditation
+                        self.meditation = self.med_smoother.update(raw_med)
                         got_esense = True
 
                     # Only run state detection + callbacks on eSense packets

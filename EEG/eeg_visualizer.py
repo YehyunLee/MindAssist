@@ -334,6 +334,20 @@ def build_dashboard():
 
 # ── Main ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    # Always start fresh: unpair + re-pair to avoid stale BT connections
+    print("Resetting Bluetooth connection...")
+    try:
+        bt_reset.main()
+    except Exception as e:
+        print(f"  BT reset warning: {e} — will retry via auto-reconnect")
+
+    # Wait for serial port to appear after pairing
+    for _ in range(15):
+        if os.path.exists(SERIAL_PORT):
+            time.sleep(2)
+            break
+        time.sleep(1)
+
     _create_processor()
     _start_processor()
 
