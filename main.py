@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent
 TARGETS = [
     ROOT / "EEG" / "eeg_visualizer.py",
     ROOT / "PythonInput" / "Commander.py",
-    ROOT / "ObjectDetection" / "esp_cam_viewer.py",
+    ROOT / "ObjectDetection" / "object_detection.py",
 ]
 
 
