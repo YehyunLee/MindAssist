@@ -21,7 +21,6 @@ Inspired by Neuralink's CONVOY trial demo, recreated with affordable consumer ha
 |---|---|---|
 | **Focus** (high Attention) | > 65–75 | Move arm forward / lift / extend toward target |
 | **Relax** (high Meditation) | > 65–75 | Retract arm / open gripper / return to rest |
-| **Blink** (strong blink) | detected | Close gripper (grab spoon/object) or trigger action |
 
 ## Architecture
 
@@ -42,7 +41,7 @@ MindWave Mobile 2 ──Bluetooth──▸ Laptop (Python)
 
 ## Real-time EEG -> Commander bridge
 
-`EEG/eeg_visualizer.py` now publishes live EEG packets on localhost UDP (`127.0.0.1:8765`), and `PythonInput/Python.py` subscribes to that stream in real time.
+`EEG/eeg_visualizer.py` now publishes live EEG packets on localhost UDP (`127.0.0.1:8765`), and `PythonInput/Commander.py` subscribes to that stream in real time.
 
 - EEG stream payload fields: `attention`, `meditation`, `signal`, `blink`, `state`, `ts`
 - Transport: local UDP JSON (same laptop, no cloud)
@@ -60,7 +59,7 @@ If EEG stream is stale for 5 seconds, commander sends `0` (safe/home).
 ### Run both processes together
 
 1. Terminal A: `python EEG/eeg_visualizer.py`
-2. Terminal B: `python PythonInput/Python.py`
+2. Terminal B: `python PythonInput/Commander.py`
 
 Make sure `PORT` in `PythonInput/Python.py` matches your Arduino serial device.
 
