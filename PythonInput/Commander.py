@@ -23,8 +23,8 @@ FOCUS_SEARCH_THRESHOLD = float(os.environ.get("FOCUS_SEARCH_THRESHOLD", "40"))
 EEG_STALE_S = float(os.environ.get("EEG_STALE_S", "3.0"))
 
 # ---------- SEARCH SWEEP ----------
-ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "60"))
-ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "120"))
+ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "70"))
+ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "130"))
 ROTATION_STEP = int(os.environ.get("ROTATION_STEP", "2"))
 SWEEP_INTERVAL_S = float(os.environ.get("SWEEP_INTERVAL_S", "0.3"))
 
@@ -35,7 +35,7 @@ SWEEP_INTERVAL_S = float(os.environ.get("SWEEP_INTERVAL_S", "0.3"))
 # index 3: lower joint
 # index 4: rotation
 # index 5: aux (unused)
-SEARCH_GRIPPER = int(os.environ.get("SEARCH_GRIPPER", "0"))
+SEARCH_GRIPPER = int(os.environ.get("SEARCH_GRIPPER", "25"))
 SEARCH_UPPER = int(os.environ.get("SEARCH_UPPER", "180"))
 SEARCH_MIDDLE = int(os.environ.get("SEARCH_MIDDLE", "0"))
 SEARCH_LOWER = int(os.environ.get("SEARCH_LOWER", "80"))
@@ -50,7 +50,11 @@ OBJECT_SHOW_WINDOW = os.environ.get("OBJECT_SHOW_WINDOW", "1")
 OBJECT_DETECTION_SCRIPT = os.environ.get("OBJECT_DETECTION_SCRIPT", "object_detection.py")
 OBJECT_DETECTION_FALLBACK = os.environ.get("OBJECT_DETECTION_FALLBACK", "object_detection.py")
 OBJECT_RESTART_INTERVAL_S = float(os.environ.get("OBJECT_RESTART_INTERVAL_S", "3.0"))
-START_MODAL_SERVER = os.environ.get("START_MODAL_SERVER", "1") == "1"
+# Modal cloud: set MODAL_ENDPOINT to your deployed Modal URL to use cloud inference
+# e.g. "https://<username>--yolo-inference-fastapi-app.modal.run/detect"
+# When set, local modal_server.py is not started
+MODAL_ENDPOINT = os.environ.get("MODAL_ENDPOINT", "")  # empty = use local server
+START_MODAL_SERVER = os.environ.get("START_MODAL_SERVER", "1") == "1" and not MODAL_ENDPOINT
 MODAL_SERVER_SCRIPT = os.environ.get("MODAL_SERVER_SCRIPT", "modal_server.py")
 MODAL_RESTART_INTERVAL_S = float(os.environ.get("MODAL_RESTART_INTERVAL_S", "4.0"))
 
@@ -95,6 +99,12 @@ def maybe_start_object_detection():
         return None
     env = os.environ.copy()
     env["OBJECT_SHOW_WINDOW"] = OBJECT_SHOW_WINDOW
+    # Pass Modal endpoint to object_detection (cloud or local)
+    if MODAL_ENDPOINT:
+        env["MODAL_ENDPOINT"] = MODAL_ENDPOINT
+        print(f"[Commander] Using Modal cloud: {MODAL_ENDPOINT}")
+    else:
+        env["MODAL_ENDPOINT"] = "http://127.0.0.1:8080/detect"
     proc = subprocess.Popen([sys.executable, script.name], cwd=str(script.parent), env=env)
     print(f"[Commander] Started object detection (pid={proc.pid})")
     return proc
@@ -238,7 +248,7 @@ class WorkflowFSM:
             if elapsed >= APPROACH_TIMEOUT_S:
                 print(f"[APPROACH] Timeout ({APPROACH_TIMEOUT_S}s) -> lowering arm to PICK")
                 # Lower arm: open gripper, extend forward/down
-                send_pose(ser, 20, 120, 0, 26, self.rotation_angle, 0)
+                send_pose(ser, 45, 120, 0, 26, self.rotation_angle, 0)
                 self.set_state(self.PICK)
             return
 

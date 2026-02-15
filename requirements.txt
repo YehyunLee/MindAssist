@@ -9,3 +9,4 @@ matplotlib
 numpy
 pyserial
 ultralytics
+modal  # For cloud GPU inference deployment
