@@ -20,7 +20,7 @@ from object_stream import UDPBroadcaster
 
 
 MODAL_ENDPOINT = os.environ.get("MODAL_ENDPOINT", "http://127.0.0.1:8080/detect")
-CONF_THRESHOLD = float(os.environ.get("OBJ_CONF_THRESHOLD", "0.40"))
+CONF_THRESHOLD = float(os.environ.get("OBJ_CONF_THRESHOLD", "0.25"))
 INFER_INTERVAL_S = float(os.environ.get("OBJ_INFER_INTERVAL_S", "0.12"))
 SEND_INTERVAL_S = float(os.environ.get("OBJ_SEND_INTERVAL_S", "0.08"))
 SHOW_WINDOW = os.environ.get("OBJECT_SHOW_WINDOW", "1") == "1"
@@ -166,6 +166,15 @@ def main():
             if now - last_infer >= INFER_INTERVAL_S:
                 latest_detections = call_modal_inference(frame)
                 last_infer = now
+                if latest_detections:
+                    for d in latest_detections:
+                        tag = ">>>" if float(d.get("score", 0)) >= CONF_THRESHOLD else "   "
+                        print(
+                            f"[RAW] {tag} {d.get('label')} "
+                            f"score={float(d.get('score', 0)):.2f} "
+                            f"box=({d.get('origin_x')},{d.get('origin_y')},"
+                            f"{d.get('width')}x{d.get('height')})"
+                        )
 
             payload = best_detection_payload(latest_detections, w, h)
 
