@@ -27,6 +27,10 @@ OBJECT_STALE_S = float(os.environ.get("OBJECT_STALE_S", "1.5"))
 SEARCH_SWEEP_INTERVAL_S = float(os.environ.get("SEARCH_SWEEP_INTERVAL_S", "1.8"))
 APPROACH_CENTER_TOL = float(os.environ.get("APPROACH_CENTER_TOL", "0.12"))
 PICKUP_AREA_THRESHOLD = float(os.environ.get("PICKUP_AREA_THRESHOLD", "0.08"))
+LOCK_DETECTIONS_REQUIRED = int(os.environ.get("LOCK_DETECTIONS_REQUIRED", "3"))
+MAX_OBJECT_MISS = int(os.environ.get("MAX_OBJECT_MISS", "10"))
+APPROACH_PICK_STABLE_COUNT = int(os.environ.get("APPROACH_PICK_STABLE_COUNT", "4"))
+COMMAND_RESEND_S = float(os.environ.get("COMMAND_RESEND_S", "1.0"))
 
 PICK_HOLD_S = float(os.environ.get("PICK_HOLD_S", "2.0"))
 LIFT_HOLD_S = float(os.environ.get("LIFT_HOLD_S", "2.0"))
@@ -57,12 +61,18 @@ class WorkflowFSM:
         self.last_sent_step = None
         self.last_search_move = 0.0
         self.search_idx = 0
-        self.search_pattern = [0, 1, 2, 1]
+        self.search_pattern = [0, 1, 2, 1, 0, 2]
+        self.obj_seen_streak = 0
+        self.obj_miss_streak = 0
+        self.pick_ready_streak = 0
 
     def set_state(self, new_state):
         if new_state != self.state:
             self.state = new_state
             self.state_started = time.time()
+            self.obj_seen_streak = 0
+            self.obj_miss_streak = 0
+            self.pick_ready_streak = 0
             print(f"[FSM] -> {self.state}")
 
     def _is_object_fresh(self, obj):
@@ -94,13 +104,18 @@ class WorkflowFSM:
         # From here onward, ignore EEG until SERVE completes.
         if self.state == self.SEARCH:
             if obj_found:
-                print(
-                    f"[SEARCH] Object found: label={obj.get('label')} "
-                    f"score={float(obj.get('score', 0.0)):.2f}"
-                )
-                self.set_state(self.APPROACH)
-                return 1
+                self.obj_seen_streak += 1
+                if self.obj_seen_streak >= LOCK_DETECTIONS_REQUIRED:
+                    print(
+                        f"[SEARCH] Object lock acquired: label={obj.get('label')} "
+                        f"score={float(obj.get('score', 0.0)):.2f}"
+                    )
+                    self.set_state(self.APPROACH)
+                    return 1
+            else:
+                self.obj_seen_streak = 0
 
+            # Keep sweeping continuously until object lock is acquired.
             if now - self.last_search_move >= SEARCH_SWEEP_INTERVAL_S:
                 step = self.search_pattern[self.search_idx]
                 self.search_idx = (self.search_idx + 1) % len(self.search_pattern)
@@ -111,14 +126,24 @@ class WorkflowFSM:
 
         if self.state == self.APPROACH:
             if not obj_found:
-                print("[APPROACH] Lost object -> back to search")
-                self.set_state(self.SEARCH)
-                return None
+                self.obj_miss_streak += 1
+                if self.obj_miss_streak >= MAX_OBJECT_MISS:
+                    print("[APPROACH] Lost object -> back to search")
+                    self.set_state(self.SEARCH)
+                    return None
+                return 1
+            self.obj_miss_streak = 0
 
             area = float(obj.get("area", 0.0))
             cx = float(obj.get("cx", 0.5))
+            centered = abs(cx - 0.5) <= APPROACH_CENTER_TOL
 
-            if area >= PICKUP_AREA_THRESHOLD:
+            if area >= PICKUP_AREA_THRESHOLD and centered:
+                self.pick_ready_streak += 1
+            else:
+                self.pick_ready_streak = 0
+
+            if self.pick_ready_streak >= APPROACH_PICK_STABLE_COUNT:
                 print(
                     f"[APPROACH] Close enough (area={area:.3f}) -> pick"
                 )
@@ -217,6 +242,7 @@ def main():
     latest_eeg = None
     latest_obj = None
     last_eeg_ts = 0.0
+    last_cmd_ts = 0.0
 
     time.sleep(2)
     print("[Commander] Online. Waiting for EEG + object streams...")
@@ -228,8 +254,11 @@ def main():
                 latest_eeg = eeg
                 last_eeg_ts = float(eeg.get("ts", 0.0))
 
-            obj = obj_sub.recv()
-            if obj:
+            # Drain object queue and keep latest object telemetry.
+            while True:
+                obj = obj_sub.recv()
+                if not obj:
+                    break
                 latest_obj = obj
 
             if latest_eeg is None:
@@ -245,9 +274,16 @@ def main():
                 continue
 
             step = fsm.update(latest_eeg, latest_obj)
+            should_send = False
             if step is not None and step != fsm.last_sent_step:
+                should_send = True
+            elif step is not None and (time.time() - last_cmd_ts) >= COMMAND_RESEND_S:
+                should_send = True
+
+            if should_send:
                 send_step(ser, step)
                 fsm.last_sent_step = step
+                last_cmd_ts = time.time()
                 print(
                     "[CMD] step=%d state=%s attn=%.1f obj=%s score=%.2f area=%.3f cx=%.2f"
                     % (

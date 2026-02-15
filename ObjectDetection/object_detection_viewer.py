@@ -21,6 +21,7 @@ SEND_INTERVAL_S = float(os.environ.get("OBJ_SEND_INTERVAL_S", "0.08"))
 SHOW_WINDOW = os.environ.get("OBJECT_SHOW_WINDOW", "1") == "1"
 CAMERA_RETRY_S = float(os.environ.get("CAMERA_RETRY_S", "2.0"))
 MAX_READ_FAILS = int(os.environ.get("MAX_CAMERA_READ_FAILS", "30"))
+LOG_OBJECT_EVERY_S = float(os.environ.get("LOG_OBJECT_EVERY_S", "1.0"))
 
 latest_result = None
 
@@ -117,6 +118,7 @@ def main():
     stream = UDPBroadcaster()
     t0 = time.monotonic()
     last_send = 0.0
+    last_log = 0.0
     read_failures = 0
 
     options = vision.ObjectDetectorOptions(
@@ -148,13 +150,29 @@ def main():
             detector.detect_async(mp_image, timestamp_ms=timestamp_ms)
 
             local = latest_result
+            payload = best_detection_payload(local, w, h)
             if (time.monotonic() - last_send) >= SEND_INTERVAL_S:
-                stream.send(best_detection_payload(local, w, h))
+                stream.send(payload)
                 last_send = time.monotonic()
+
+            if (time.monotonic() - last_log) >= LOG_OBJECT_EVERY_S:
+                if payload["found"]:
+                    print(
+                        "[OBJ] found label=%s score=%.2f cx=%.2f area=%.3f"
+                        % (
+                            payload["label"],
+                            float(payload["score"]),
+                            float(payload["cx"]),
+                            float(payload["area"]),
+                        )
+                    )
+                else:
+                    print("[OBJ] none")
+                last_log = time.monotonic()
 
             if SHOW_WINDOW:
                 vis = draw_overlay(frame.copy(), local)
-                p = best_detection_payload(local, w, h)
+                p = payload
                 if p["found"]:
                     cv2.putText(
                         vis,
