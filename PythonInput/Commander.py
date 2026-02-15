@@ -14,14 +14,14 @@ if str(ROOT) not in sys.path:
 from ObjectDetection.object_stream import UDPSubscriber as ObjectSubscriber
 
 # ---------- SERIAL CONFIG ----------
-PORT = os.environ.get("MINIARM_PORT", "/dev/cu.usbmodem11301")
+PORT = os.environ.get("MINIARM_PORT", "COM3")
 BAUD = int(os.environ.get("MINIARM_BAUD", "9600"))
 TIMEOUT = float(os.environ.get("MINIARM_TIMEOUT", "0.05"))
 LOOP_SLEEP = float(os.environ.get("COMMANDER_LOOP_SLEEP", "0.05"))
 
 # ---------- SEARCH SWEEP ----------
-ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "30"))
-ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "150"))
+ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "110"))
+ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "180"))
 ROTATION_STEP = int(os.environ.get("ROTATION_STEP", "1"))
 SWEEP_INTERVAL_S = float(os.environ.get("SWEEP_INTERVAL_S", "0.3"))
 
@@ -34,8 +34,8 @@ SWEEP_INTERVAL_S = float(os.environ.get("SWEEP_INTERVAL_S", "0.3"))
 # index 5: aux (unused)
 SEARCH_GRIPPER = int(os.environ.get("SEARCH_GRIPPER", "0"))
 SEARCH_UPPER = int(os.environ.get("SEARCH_UPPER", "180"))
-SEARCH_MIDDLE = int(os.environ.get("SEARCH_MIDDLE", "20"))
-SEARCH_LOWER = int(os.environ.get("SEARCH_LOWER", "50"))
+SEARCH_MIDDLE = int(os.environ.get("SEARCH_MIDDLE", "0"))
+SEARCH_LOWER = int(os.environ.get("SEARCH_LOWER", "80"))
 SEARCH_AUX = int(os.environ.get("SEARCH_AUX", "0"))
 
 # ---------- OBJECT DETECTION ----------
@@ -232,7 +232,7 @@ class WorkflowFSM:
             if elapsed >= APPROACH_TIMEOUT_S:
                 print(f"[APPROACH] Timeout ({APPROACH_TIMEOUT_S}s) -> lowering arm to PICK")
                 # Lower arm: open gripper, extend forward/down
-                send_pose(ser, 0, 120, 0, 0, self.rotation_angle, 0)
+                send_pose(ser, 0, 110, 0, 30, self.rotation_angle, 0)
                 self.set_state(self.PICK)
             return
 
@@ -251,7 +251,7 @@ class WorkflowFSM:
                 return
             # Gripper closed, now lift straight up
             print("[PICK] Grabbed -> LIFT")
-            send_pose(ser, 90, 90, 90, 90, self.rotation_angle, 0)
+            send_pose(ser, 90, 100, 0, 60, self.rotation_angle, 0)
             self.set_state(self.LIFT)
             return
 
@@ -259,7 +259,7 @@ class WorkflowFSM:
         if self.state == self.LIFT:
             if now - self.state_started >= LIFT_HOLD_S:
                 print("[LIFT] Raised -> SERVE (straight up)")
-                send_pose(ser, 90, 90, 90, 90, 90, 0)
+                send_pose(ser, 90, 70, 40, 50, 90, 0)
                 self.set_state(self.SERVE)
             return
 
