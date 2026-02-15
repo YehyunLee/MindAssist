@@ -39,8 +39,11 @@ SERVE_HOLD_S = float(os.environ.get("SERVE_HOLD_S", "8.0"))
 START_OBJECT_DETECTION = os.environ.get("START_OBJECT_DETECTION", "1") == "1"
 OBJECT_SHOW_WINDOW = os.environ.get("OBJECT_SHOW_WINDOW", "1")
 OBJECT_RESTART_INTERVAL_S = float(os.environ.get("OBJECT_RESTART_INTERVAL_S", "3.0"))
-OBJECT_DETECTION_SCRIPT = os.environ.get("OBJECT_DETECTION_SCRIPT", "object_detection_viewer.py")
-OBJECT_DETECTION_FALLBACK = os.environ.get("OBJECT_DETECTION_FALLBACK", "object_detection_viewer.py")
+OBJECT_DETECTION_SCRIPT = os.environ.get("OBJECT_DETECTION_SCRIPT", "object_detection.py")
+OBJECT_DETECTION_FALLBACK = os.environ.get("OBJECT_DETECTION_FALLBACK", "object_detection.py")
+START_MODAL_SERVER = os.environ.get("START_MODAL_SERVER", "1") == "1"
+MODAL_SERVER_SCRIPT = os.environ.get("MODAL_SERVER_SCRIPT", "modal_server.py")
+MODAL_RESTART_INTERVAL_S = float(os.environ.get("MODAL_RESTART_INTERVAL_S", "4.0"))
 # ----------------------------
 
 
@@ -193,13 +196,11 @@ def maybe_start_object_detection():
         fallback = ROOT / "ObjectDetection" / OBJECT_DETECTION_FALLBACK
         print(f"[Commander] {script.name} not found, falling back to {fallback.name}")
         script = fallback
-    if script.name == "object_detection_yolo.py" and not model_path.exists():
-        fallback = ROOT / "ObjectDetection" / OBJECT_DETECTION_FALLBACK
+    if script.name == "object_detection.py" and not model_path.exists():
         print(
-            f"[Commander] YOLO model missing at {model_path}. "
-            f"Falling back to {fallback.name}"
+            f"[Commander] YOLO model not found at {model_path}. "
+            "modal_server will use its default model download/cache behavior."
         )
-        script = fallback
     if not script.exists():
         fallback = ROOT / "ObjectDetection" / "object_detection.py"
         print(f"[Commander] {script.name} missing, final fallback to {fallback.name}")
@@ -208,6 +209,18 @@ def maybe_start_object_detection():
     env["OBJECT_SHOW_WINDOW"] = OBJECT_SHOW_WINDOW
     proc = subprocess.Popen([sys.executable, script.name], cwd=str(script.parent), env=env)
     print(f"[Commander] Started object detection (pid={proc.pid})")
+    return proc
+
+
+def maybe_start_modal_server():
+    if not START_MODAL_SERVER:
+        return None
+    script = ROOT / "ObjectDetection" / MODAL_SERVER_SCRIPT
+    if not script.exists():
+        print(f"[Commander] modal server script missing: {script}")
+        return None
+    proc = subprocess.Popen([sys.executable, script.name], cwd=str(script.parent), env=os.environ.copy())
+    print(f"[Commander] Started modal server (pid={proc.pid})")
     return proc
 
 
@@ -236,8 +249,13 @@ def main():
     eeg_sub = EEGSubscriber()
     obj_sub = ObjectSubscriber()
     fsm = WorkflowFSM()
+    modal_proc = maybe_start_modal_server()
+    if modal_proc is not None:
+        # Give server a brief warmup before detector starts sending requests.
+        time.sleep(1.0)
     detector_proc = maybe_start_object_detection()
     last_restart_try = time.time()
+    last_modal_restart_try = time.time()
 
     latest_eeg = None
     latest_obj = None
@@ -311,10 +329,20 @@ def main():
                     detector_proc = maybe_start_object_detection()
                     last_restart_try = time.time()
 
+            if modal_proc is not None and modal_proc.poll() is not None:
+                print(f"[Commander] modal_server exited (code={modal_proc.returncode})")
+                modal_proc = None
+
+            if START_MODAL_SERVER and modal_proc is None:
+                if time.time() - last_modal_restart_try >= MODAL_RESTART_INTERVAL_S:
+                    modal_proc = maybe_start_modal_server()
+                    last_modal_restart_try = time.time()
+
             time.sleep(LOOP_SLEEP)
 
     finally:
         stop_process(detector_proc)
+        stop_process(modal_proc)
         obj_sub.close()
         eeg_sub.close()
         ser.close()
