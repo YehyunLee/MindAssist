@@ -29,13 +29,6 @@ MAX_READ_FAILS = int(os.environ.get("MAX_CAMERA_READ_FAILS", "30"))
 HTTP_TIMEOUT_S = float(os.environ.get("MODAL_HTTP_TIMEOUT_S", "5.0"))
 LOG_OBJECT_EVERY_S = float(os.environ.get("LOG_OBJECT_EVERY_S", "1.0"))
 
-MARGIN = 10
-ROW_SIZE = 10
-FONT_SIZE = 1.2
-FONT_THICKNESS = 2
-TEXT_COLOR = (0, 0, 255)
-
-
 def call_modal_inference(frame: np.ndarray) -> List[Dict]:
     ok, buf = cv2.imencode(".jpg", frame)
     if not ok:
@@ -53,29 +46,6 @@ def call_modal_inference(frame: np.ndarray) -> List[Dict]:
     except Exception as e:
         print(f"[modal] request failed: {e}")
         return []
-
-
-def visualize(frame: np.ndarray, detections: List[Dict]) -> np.ndarray:
-    for det in detections:
-        score = float(det.get("score", 0.0))
-        if score < CONF_THRESHOLD:
-            continue
-        x = int(det.get("origin_x", 0))
-        y = int(det.get("origin_y", 0))
-        w = int(det.get("width", 0))
-        h = int(det.get("height", 0))
-        label = str(det.get("label", "obj"))
-        cv2.rectangle(frame, (x, y), (x + w, y + h), TEXT_COLOR, 2)
-        cv2.putText(
-            frame,
-            f"{label} ({score:.2f})",
-            (MARGIN + x, MARGIN + ROW_SIZE + y),
-            cv2.FONT_HERSHEY_PLAIN,
-            FONT_SIZE,
-            TEXT_COLOR,
-            FONT_THICKNESS,
-        )
-    return frame
 
 
 def best_detection_payload(detections: List[Dict], frame_w: int, frame_h: int) -> Dict:
@@ -198,19 +168,7 @@ def main():
                 last_log = now
 
             if SHOW_WINDOW:
-                vis = visualize(frame.copy(), latest_detections)
-                if payload["found"]:
-                    cv2.putText(
-                        vis,
-                        f"{payload['label']} score={payload['score']:.2f} "
-                        f"cx={payload['cx']:.2f} area={payload['area']:.3f}",
-                        (10, h - 12),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        (255, 255, 0),
-                        2,
-                    )
-                cv2.imshow("MindAssist Object Detection (YOLO Modal)", vis)
+                cv2.imshow("MindAssist Object Detection (YOLO Modal)", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
     finally:

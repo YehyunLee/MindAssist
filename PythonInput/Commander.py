@@ -19,7 +19,7 @@ PORT = os.environ.get("MINIARM_PORT", "/dev/cu.usbmodem101")
 BAUD = int(os.environ.get("MINIARM_BAUD", "9600"))
 TIMEOUT = float(os.environ.get("MINIARM_TIMEOUT", "0.05"))
 LOOP_SLEEP = float(os.environ.get("COMMANDER_LOOP_SLEEP", "0.05"))
-FOCUS_SEARCH_THRESHOLD = float(os.environ.get("FOCUS_SEARCH_THRESHOLD", "60"))
+FOCUS_SEARCH_THRESHOLD = float(os.environ.get("FOCUS_SEARCH_THRESHOLD", "40"))
 EEG_STALE_S = float(os.environ.get("EEG_STALE_S", "3.0"))
 
 # ---------- SEARCH SWEEP ----------
