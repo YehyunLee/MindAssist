@@ -11,13 +11,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
+from EEG.eeg_stream import UDPSubscriber as EEGSubscriber
 from ObjectDetection.object_stream import UDPSubscriber as ObjectSubscriber
 
 # ---------- SERIAL CONFIG ----------
-PORT = os.environ.get("MINIARM_PORT", "/dev/cu.usbmodem11301")
+PORT = os.environ.get("MINIARM_PORT", "/dev/cu.usbmodem101")
 BAUD = int(os.environ.get("MINIARM_BAUD", "9600"))
 TIMEOUT = float(os.environ.get("MINIARM_TIMEOUT", "0.05"))
 LOOP_SLEEP = float(os.environ.get("COMMANDER_LOOP_SLEEP", "0.05"))
+FOCUS_SEARCH_THRESHOLD = float(os.environ.get("FOCUS_SEARCH_THRESHOLD", "60"))
+EEG_STALE_S = float(os.environ.get("EEG_STALE_S", "3.0"))
 
 # ---------- SEARCH SWEEP ----------
 ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "30"))
@@ -158,7 +161,7 @@ class WorkflowFSM:
             return False
         return (time.time() - float(obj.get("ts", 0.0))) <= OBJECT_STALE_S
 
-    def update(self, ser, obj):
+    def update(self, ser, obj, focus_active):
         now = time.time()
         obj_fresh = self._is_fresh(obj)
         obj_found = bool(obj and obj.get("found", False) and obj_fresh)
@@ -170,13 +173,16 @@ class WorkflowFSM:
             area = float(obj.get("area", 0)) if obj else 0
             print(
                 f"[STATUS] state={self.state} rot={self.rotation_angle} "
-                f"obj={'Y' if obj_found else 'N'} score={score:.2f} "
+                f"focus={'Y' if focus_active else 'N'} obj={'Y' if obj_found else 'N'} score={score:.2f} "
                 f"cx={cx:.2f} area={area:.3f}"
             )
             self.last_log = now
 
         # ---- SEARCH: sweep rotation left/right until YOLO locks on ----
         if self.state == self.SEARCH:
+            if not focus_active:
+                return
+
             if obj_found:
                 self.obj_seen_streak += 1
                 print(
@@ -290,6 +296,7 @@ def main():
     signal.signal(signal.SIGINT, stop_handler)
     signal.signal(signal.SIGTERM, stop_handler)
 
+    eeg_sub = EEGSubscriber()
     ser = serial.Serial(PORT, BAUD, timeout=TIMEOUT)
     obj_sub = ObjectSubscriber()
     fsm = WorkflowFSM()
@@ -300,10 +307,12 @@ def main():
     detector_proc = maybe_start_object_detection()
     last_restart_try = time.time()
     last_modal_restart_try = time.time()
+    latest_eeg = None
+    last_eeg_ts = 0.0
     latest_obj = None
 
     time.sleep(2)
-    print("[Commander] Online. Starting search sweep immediately...")
+    print("[Commander] Online. Search will run only while EEG focus is high.")
 
     # Send initial search pose
     send_pose(
@@ -313,6 +322,12 @@ def main():
 
     try:
         while running:
+            # Keep latest EEG packet
+            eeg = eeg_sub.recv()
+            if eeg:
+                latest_eeg = eeg
+                last_eeg_ts = float(eeg.get("ts", 0.0))
+
             # Drain object queue, keep latest
             while True:
                 obj = obj_sub.recv()
@@ -320,7 +335,11 @@ def main():
                     break
                 latest_obj = obj
 
-            fsm.update(ser, latest_obj)
+            eeg_fresh = (time.time() - last_eeg_ts) <= EEG_STALE_S if last_eeg_ts else False
+            attention = float(latest_eeg.get("attention", 0.0)) if latest_eeg else 0.0
+            focus_active = eeg_fresh and attention >= FOCUS_SEARCH_THRESHOLD
+
+            fsm.update(ser, latest_obj, focus_active)
 
             # Read Arduino replies
             if ser.in_waiting:
@@ -350,6 +369,7 @@ def main():
     finally:
         stop_process(detector_proc)
         stop_process(modal_proc)
+        eeg_sub.close()
         obj_sub.close()
         send_pose(ser, 0, 90, 90, 90, 90, 0)
         time.sleep(0.5)
