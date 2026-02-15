@@ -40,6 +40,30 @@ MindWave Mobile 2 ──Bluetooth──▸ Laptop (Python)
 2. **State → motion planner** — Python FSM converts `FOCUS` / `RELAX` / `BLINK` into commands (`POS1`, `FEED`, `HOME`). Auto-completes the feeding routine if focus is sustained > 2 s.
 3. **Robot layer** — Arduino serial parser + `Servo` library with preset joint positions (`reach()`, `lift()`, `feed()`, `home()`).
 
+## Real-time EEG -> Commander bridge
+
+`EEG/eeg_visualizer.py` now publishes live EEG packets on localhost UDP (`127.0.0.1:8765`), and `PythonInput/Python.py` subscribes to that stream in real time.
+
+- EEG stream payload fields: `attention`, `meditation`, `signal`, `blink`, `state`, `ts`
+- Transport: local UDP JSON (same laptop, no cloud)
+- Commander behavior: finite-state machine for robot-arm step commands (`0..3`)
+
+FSM used by `PythonInput/Python.py`:
+
+- `HOME` -> `REACH` when focus is high (`FOCUS`, attention >= 60) -> send `1`
+- `REACH` -> `GRAB` on blink -> send `2`
+- `GRAB` -> `RETURN` when relax is high (`RELAX`, meditation >= 60) -> send `3`
+- `RETURN` -> `HOME` on relax/idle -> send `0`
+
+If EEG stream is stale for 5 seconds, commander sends `0` (safe/home).
+
+### Run both processes together
+
+1. Terminal A: `python EEG/eeg_visualizer.py`
+2. Terminal B: `python PythonInput/Python.py`
+
+Make sure `PORT` in `PythonInput/Python.py` matches your Arduino serial device.
+
 ## Documentation & Links
 
 - [NeuroSky MindWave Mobile & Arduino tutorial](https://developer.neurosky.com/docs/doku.php?id=mindwave_mobile_and_arduino)

@@ -3,6 +3,7 @@
  * 声波抓取例程(ultrasonic grasping program)
  * 超声波传感器检测到前方4cm左右的物体，会使用机械臂将物体夹取放置在左侧(If the ultrasonic sensor detects an object about 4cm ahead, the robotic gripper will grasp the object to place to the left side)
  */
+#include <Wire.h>
 #include <FastLED.h> //导入LED库(import LED library)
 #include <Servo.h> //导入舵机库(import servo library)
 #include "tone.h" //音调库(import tone library)
@@ -42,35 +43,53 @@ static void ultrasound_task(void);  // Ultrasonic task
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  // 设置串行端口读取数据的超时时间(set the timeout for serial port reading data)
+  delay(100);
+  Wire.setWireTimeout(25000, true); // 25ms I2C timeout, auto-reset bus on hang
+  Serial.println("[DBG] serial ok");
+  // 設置串行端口读取数据的超时时间(set the timeout for serial port reading data)
   Serial.setTimeout(500);
 
   // 绑定舵机IO口(bind servo IO pin)
   for (int i = 0; i < 5; ++i) {
     servos[i].attach(servoPins[i],500,2500);
   }
+  Serial.println("[DBG] servos ok");
 
   //RGB灯初始化并控制(initialize and control RGB LED)
   FastLED.addLeds<WS2812, rgbPin, GRB>(rgbs, 1);
   rgbs[0] = CRGB(0, 0, 100);
   FastLED.show();
+  Serial.println("[DBG] led ok");
 
   //Read deviation value
   action_ctl.read_offset();
+  Serial.println("[DBG] offset ok");
 
   //Initialize the buzzer and it makes a sound
   pinMode(buzzerPin, OUTPUT);
   tone(buzzerPin, 1000);
   delay(100);
   noTone(buzzerPin);
-  //ul.Color(0,255,255,0,0,255);
+  Serial.println("[DBG] buzzer ok");
 
-  delay(100);
+  //ul.Color(0,0,255,0,0,255); // commented out - hangs if sensor I2C not responding
+
+  // I2C scan - find what devices are on the bus
+  Serial.println("[DBG] I2C scan:");
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("  Found device at 0x");
+      Serial.println(addr, HEX);
+    }
+  }
+  Serial.println("[DBG] scan done");
+
+  delay(500);
   Serial.println("start");
 }
 
 void loop() {
-  Serial.println("running");
   //超声波任务(ultrasonic task)
   ultrasound_task();
   // 蜂鸣器鸣响任务(buzzer sound task)
@@ -98,7 +117,10 @@ void ultrasound_task(void)
 
   // Obtain ultrasonic distance
   int dis = ul.Filter();
-  Serial.println(dis); //打印距离(print distance)
+  Serial.print("d=");
+  Serial.print(dis);
+  Serial.print(" s=");
+  Serial.println(step);
 
   switch(step)
   {
@@ -126,6 +148,7 @@ void ultrasound_task(void)
       {
         delay_count = 0;
         // Action group running
+        Serial.println("[ACT] starting action group");
         action_ctl.action_set(act_num);
         act_num = 0;
         step++;
@@ -168,11 +191,7 @@ void servo_control(void) {
     servo_angles[i] = servo_angles[i] > limt_angles[i][1] ? limt_angles[i][1] : servo_angles[i];
     
     servos[i].write(i == 0 || i == 5 ? 180 - servo_angles[i] : servo_angles[i]);
-    Serial.print(servo_angles[i]); 
-    Serial.print(" ");
-
   }
-  Serial.println();
 }
 
 // 蜂鸣器鸣响任务(buzzer sound task)

@@ -4,7 +4,7 @@ void HW_ACTION_CTL::action_set(int num){
   action_num = num;
 }
 
-static int HW_ACTION_CTL::action_state_get(void){
+int HW_ACTION_CTL::action_state_get(void){
   return action_num;
 }
 
@@ -29,7 +29,7 @@ void HW_ACTION_CTL::read_offset(void){
   }
 }
 
-static int8_t* HW_ACTION_CTL::get_offset(void){
+int8_t* HW_ACTION_CTL::get_offset(void){
   return servo_offset;
 }
 
@@ -67,7 +67,7 @@ void HW_ACTION_CTL::action_task(void){
         break;
       case 1: //等待动作运行(wait for the action to be executed)
         delay_count++;
-        if(delay_count > 2)
+        if(delay_count > 5)
         {
           num++;
           delay_count = 0;
