@@ -7,11 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# For now, run these three together.
+# Commander handles object-detection subprocesses internally.
 TARGETS = [
     ROOT / "EEG" / "eeg_visualizer.py",
     ROOT / "PythonInput" / "Commander.py",
-    ROOT / "ObjectDetection" / "object_detection.py",
 ]
 
 

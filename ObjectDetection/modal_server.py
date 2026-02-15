@@ -1,36 +1,33 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from pydantic import BaseModel
-import uvicorn
-import numpy as np
-from PIL import Image
+"""FastAPI YOLO inference server for ESP camera frames."""
+
+from __future__ import annotations
+
 import io
 import os
 
-
-# YOLO imports
+import numpy as np
+import uvicorn
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from PIL import Image
 from ultralytics import YOLO
+
 
 app = FastAPI()
 
-
-def pil_to_bgr_array(pil_image: Image.Image) -> np.ndarray:
-    rgb = pil_image.convert("RGB")
-    arr = np.array(rgb)
-    # Convert RGB to BGR for OpenCV style
-    return arr[:, :, ::-1]
-
-
-
-# Initialize YOLO model once on startup
+YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL_PATH", "yolov8n.pt")
 yolo_model = None
-YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL_PATH", "yolov8n.pt")  # Default to YOLOv8 nano
 
 
 @app.on_event("startup")
 async def startup_event():
     global yolo_model
     yolo_model = YOLO(YOLO_MODEL_PATH)
+    print(f"[modal_server] Loaded YOLO model: {YOLO_MODEL_PATH}")
 
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "model": YOLO_MODEL_PATH}
 
 
 @app.post("/detect")
@@ -46,23 +43,33 @@ async def detect_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     img_np = np.array(pil)
-    results = yolo_model(img_np)
+
+    try:
+        results = yolo_model(img_np, verbose=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
+
     out = []
     for r in results:
         boxes = r.boxes
+        if boxes is None:
+            continue
         for box in boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            conf = float(box.conf[0])
-            cls = int(box.cls[0])
-            label = yolo_model.names[cls] if hasattr(yolo_model, 'names') else str(cls)
-            out.append({
-                "label": label,
-                "score": conf,
-                "origin_x": x1,
-                "origin_y": y1,
-                "width": x2 - x1,
-                "height": y2 - y1,
-            })
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            conf = float(box.conf[0].item())
+            cls = int(box.cls[0].item())
+            label = yolo_model.names.get(cls, str(cls))
+            out.append(
+                {
+                    "label": label,
+                    "score": conf,
+                    "origin_x": x1,
+                    "origin_y": y1,
+                    "width": max(1, x2 - x1),
+                    "height": max(1, y2 - y1),
+                }
+            )
+
     return {"detections": out}
 
 
