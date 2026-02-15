@@ -23,9 +23,9 @@ FOCUS_SEARCH_THRESHOLD = float(os.environ.get("FOCUS_SEARCH_THRESHOLD", "40"))
 EEG_STALE_S = float(os.environ.get("EEG_STALE_S", "3.0"))
 
 # ---------- SEARCH SWEEP ----------
-ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "30"))
-ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "150"))
-ROTATION_STEP = int(os.environ.get("ROTATION_STEP", "1"))
+ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "60"))
+ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "120"))
+ROTATION_STEP = int(os.environ.get("ROTATION_STEP", "2"))
 SWEEP_INTERVAL_S = float(os.environ.get("SWEEP_INTERVAL_S", "0.3"))
 
 # Search pose: [gripper, upper, middle, lower, rotation, aux]
@@ -238,7 +238,7 @@ class WorkflowFSM:
             if elapsed >= APPROACH_TIMEOUT_S:
                 print(f"[APPROACH] Timeout ({APPROACH_TIMEOUT_S}s) -> lowering arm to PICK")
                 # Lower arm: open gripper, extend forward/down
-                send_pose(ser, 20, 110, 0, 30, self.rotation_angle, 0)
+                send_pose(ser, 20, 120, 0, 26, self.rotation_angle, 0)
                 self.set_state(self.PICK)
             return
 
@@ -265,7 +265,7 @@ class WorkflowFSM:
         if self.state == self.LIFT:
             if now - self.state_started >= LIFT_HOLD_S:
                 print("[LIFT] Raised -> SERVE (straight up)")
-                send_pose(ser, 90, 70, 40, 50, 90, 0)
+                send_pose(ser, 90, 90, 90, 65, 90, 0)
                 self.set_state(self.SERVE)
             return
 
