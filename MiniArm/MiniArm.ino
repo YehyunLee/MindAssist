@@ -64,6 +64,13 @@ void servos_middle(void); //中位任务
 void set_pose(uint8_t s0, uint8_t s1, uint8_t s2, uint8_t s3, uint8_t s4, uint8_t s5);
 // comment
 
+
+bool rotate_active = true;      // keep rotating until signal
+int rotate_angle = 30;
+int rotate_dir = 1;             // 1 = increasing, -1 = decreasing
+unsigned long rotate_last = 0;
+
+
 void setup() {
   Serial.begin(9600);
   pinMode(buzzerPin, OUTPUT);
@@ -81,13 +88,17 @@ void setup() {
   tone(buzzerPin, 2000);
   delay(100);
   noTone(buzzerPin);
-  /*
+
   // Set initial position to 90 degrees
   for (int i = 0; i < 6; ++i) {
-    knob_angles[i] = 90;
     servo_angles[i] = 90;
   }
-  */
+  knob_angles[0] = 90;
+  knob_angles[1] = 180;
+  knob_angles[2] = 20;
+  knob_angles[3] = 50;
+  knob_angles[4] = 90;
+  knob_angles[5] = 0;
   
 
   FastLED.addLeds<WS2812, rgbPin, GRB>(rgbs, 1);
@@ -97,53 +108,111 @@ void setup() {
   Serial.println("Back and Forth Demo Starting...");
 }
 
-void loop() {
-  static unsigned long lastMove = 0;
-  static int step = 0;
-  
-  // Change step every 2 seconds to give servos time to arrive
-  if (millis() - lastMove > 2000) {
-    lastMove = millis();
-    
-    switch(step) {
-      case 0: // STEP 0: Move to Home / Ready position
-        // All joints at middle, gripper open (assuming 0 is open)
-        //set_pose(0, 90, 90, 90, 90, 90); 
-        set_pose(0,90,0,90,90,90);
-        rgbs[0] = CRGB::Blue;
-        step = 1;
-        break;
 
-      case 1: // STEP 1: Reach Forward
-        // Lower the shoulder/elbow to reach out
-        //set_pose(0, 160, 30, 0, 90, 90); 
-        set_pose(0,120,0,0,0,90);
-        rgbs[0] = CRGB::Yellow;
-        step = 2;
-        break;
+void search_task() {
+  if (!rotate_active) return;
 
-      case 2: // STEP 2: Grab
-        // Keep same pose, but close the gripper (Servo 5)
-        //set_pose(80, 160, 30, 0, 90, 90); 
-        set_pose(90,120,0,0,0,90);
-        rgbs[0] = CRGB::Red;
-        step = 3;
-        break;
+  if (millis() - rotate_last < 200) return; // speed control
+  rotate_last = millis();
 
-      case 3: // STEP 3: Lift Up
-        // Keep gripper closed, lift the arm back up
-        //set_pose(80, 90, 90, 90, 90, 90); 
-        set_pose(90,90,0,90,90,90);
-        rgbs[0] = CRGB::Green;
-        step = 0; // Loop back to start (will drop item at step 0)
-        break;
-    }
-    FastLED.show();
+  rotate_angle += rotate_dir;
+
+  if (rotate_angle >= 150) {
+    rotate_angle = 150;
+    rotate_dir = -1;
+  } 
+  else if (rotate_angle <= 30) {
+    rotate_angle = 30;
+    rotate_dir = 1;
   }
 
-  // Keep these running every loop iteration
-  servo_control();
+  // keep other joints steady, rotate joint 4
+  set_pose(
+    knob_angles[0],
+    knob_angles[1],
+    knob_angles[2],
+    knob_angles[3],
+    rotate_angle,   // rotation joint
+    knob_angles[5]
+  );
+}
+
+// void move_up() {
+//   rotate_active = false;   // stop rotation while moving down
+//   if (need_up) {
+//     can_move_down = false;
+//     knob_angles[3] = 90; 
+//     delay(2000);
+//     can_move_down = true;
+//   }
+//   need_up = false;
+// }
+
+// void move_down() {
+//   rotate_active = false;   // stop rotation while moving down
+//   need_up = false;
+//   if (can_move_down) {
+//     knob_angles[0] = 0; 
+//     knob_angles[1] = 150; 
+//     knob_angles[2] = 20; 
+//     knob_angles[3] = 0; 
+//   }
+// }
+
+
+
+void loop() {
+  search_task();     // continuous rotation
+  servo_control();   // smooth servo movement
   tune_task();
+
+  // index 0: open (0) and close claw (90) 
+  // index 1: upper joint
+  // index 2: middle joint
+  // index 3: lower joint
+  // index 4: rotation
+  // index 5: nothing
+  // set_pose(0, 90, 90, 90, 90, 0); 
+  
+  // // Change step every 2 seconds to give servos time to arrive
+  // if (millis() - lastMove > 2000) {
+  //   lastMove = millis();
+    
+  //   switch(step) {
+  //     case 0: // STEP 0: Move to Home / Ready position
+  //       // All joints at middle, gripper open (assuming 0 is open)
+  //       //set_pose(0, 90, 90, 90, 90, 90); 
+  //       set_pose(0,90,0,90,90,90);
+  //       rgbs[0] = CRGB::Blue;
+  //       step = 1;
+  //       break;
+
+  //     case 1: // STEP 1: Reach Forward
+  //       // Lower the shoulder/elbow to reach out
+  //       //set_pose(0, 160, 30, 0, 90, 90); 
+  //       set_pose(0,120,0,0,0,90);
+  //       rgbs[0] = CRGB::Yellow;
+  //       step = 2;
+  //       break;
+
+  //     case 2: // STEP 2: Grab
+  //       // Keep same pose, but close the gripper (Servo 5)
+  //       //set_pose(80, 160, 30, 0, 90, 90); 
+  //       set_pose(90,120,0,0,0,90);
+  //       rgbs[0] = CRGB::Red;
+  //       step = 3;
+  //       break;
+
+  //     case 3: // STEP 3: Lift Up
+  //       // Keep gripper closed, lift the arm back up
+  //       //set_pose(80, 90, 90, 90, 90, 90); 
+  //       set_pose(90,90,0,90,90,90);
+  //       rgbs[0] = CRGB::Green;
+  //       step = 0; // Loop back to start (will drop item at step 0)
+  //       break;
+  //   }
+  //   FastLED.show();
+  // }
 }
 
 
@@ -157,66 +226,6 @@ void set_pose(uint8_t s0, uint8_t s1, uint8_t s2, uint8_t s3, uint8_t s4, uint8_
   knob_angles[5] = s5;
   g_mode = MODE_KNOB; // Ensure the logic uses these angles
 }
-
-/*
-void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
-  // 设置串行端口读取数据的超时时间
-  Serial.setTimeout(500);
-  pinMode(keyPins[0], INPUT_PULLUP);
-  pinMode(keyPins[1], INPUT_PULLUP);
-  pinMode(buzzerPin, OUTPUT);
-  // 绑定舵机IO口
-  for (int i = 0; i < 6; ++i) {
-    servos[i].attach(servoPins[i]);
-  }
-
-  // 显示白色灯
-  FastLED.addLeds<WS2812, rgbPin, GRB>(rgbs, 1);
-  rgbs[0] = CRGB(100 , 100 , 100);
-  FastLED.show();
-  // 蜂鸣器鸣响一声
-  tone(buzzerPin, 1000);
-  delay(100);
-  noTone(buzzerPin);
-
-  //中位任务
-  servos_middle();
-  
-  //
-  
-  for (int i = 0; i < 6; ++i) {
-    servos[i].write(90); 
-    servo_angles[i] = 90; // Sync the internal state
-  }
-  
-
-  // 显示蓝色灯
-  FastLED.clear();
-  rgbs[0].g = 250;
-  FastLED.show();
-  delay(2000);
-
-  Serial.println("Start...");
-}
-
-void loop() {
-  // 蜂鸣器鸣响任务
-  tune_task();
-  // 按键扫描及其动作实现
-  key_scan();
-  // 旋钮读取更新
-  knob_update();
-  // 舵机控制
-  servo_control();
-  // 动作组任务
-  action_group_task();
-  // 接收中断
-  recv_handler();
-}
-*/
-
 
 
 
