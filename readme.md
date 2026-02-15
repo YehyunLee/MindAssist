@@ -71,9 +71,4 @@ Make sure `PORT` in `PythonInput/Python.py` matches your Arduino serial device.
 - [MindWave Mobile 2 (RobotShop)](https://ca.robotshop.com/products/neurosky-mindwave-mobile-2-eeg-sensor-starter-kit)
 - [miniArm Standard Kit (Amazon)](https://www.amazon.com/dp/B0DCB8KLGT?_encoding=UTF8&th=1)
 
-## Hackathon (TreeHacks 2026)
-
-**Demo narrative:** Feeding workflow — clamp a lightweight spoon into the gripper; sequence is *scoop → lift → align with mouth → return*. Secondary "object grab" script for variety.
-But for now, we are testing wihtout spoon.
-
 Built with Codex.
