@@ -98,55 +98,7 @@ void setup() {
 }
 
 void loop() {
-  static unsigned long lastMove = 0;
-  static int step = 0;
-
-  // --- Read step from Serial (expects: "0\n", "1\n", "2\n", "3\n", etc.) ---
-  if (Serial.available() > 0) {
-    long v = Serial.parseInt();          // parses the first integer in the buffer
-    while (Serial.available() > 0) {
-      Serial.read();                     // clear remainder (newline/extra chars)
-    }
-
-    // Update only if parseInt() actually found something
-    // (parseInt returns 0 if it times out or if the number is literally 0)
-    // So we accept 0..3 explicitly:
-    if (v >= 0 && v <= 3) {
-      step = (int)v;
-      // optional feedback:
-      // Serial.print("step set to: "); Serial.println(step);
-    }
-  }
-
-  // Change pose every 2 seconds to give servos time to arrive
-  if (millis() - lastMove > 2000) {
-    lastMove = millis();
-
-    switch (step) {
-      case 0:
-        set_pose(0, 90, 0, 90, 90, 90);
-        rgbs[0] = CRGB::Blue;
-        break;
-
-      case 1:
-        set_pose(0, 120, 0, 0, 0, 90);
-        rgbs[0] = CRGB::Yellow;
-        break;
-
-      case 2:
-        set_pose(90, 120, 0, 0, 0, 90);
-        rgbs[0] = CRGB::Red;
-        break;
-
-      case 3:
-        set_pose(90, 90, 0, 90, 90, 90);
-        rgbs[0] = CRGB::Green;
-        break;
-    }
-
-    FastLED.show();
-  }
-
+  recv_handler();
   servo_control();
   tune_task();
 }

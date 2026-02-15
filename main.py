@@ -7,9 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# For now, run EEG visualizer + commander together.
+# Commander handles object detection subprocesses internally.
 TARGETS = [
-    ROOT / "EEG" / "eeg_visualizer.py",
     ROOT / "PythonInput" / "Commander.py",
 ]
 
