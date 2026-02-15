@@ -36,6 +36,7 @@ FONT_THICKNESS = 2
 TEXT_COLOR = (0, 0, 255)
 
 
+# --- Modal YOLO inference ---
 def call_modal_inference(frame: np.ndarray) -> List[Dict]:
     ok, buf = cv2.imencode(".jpg", frame)
     if not ok:
