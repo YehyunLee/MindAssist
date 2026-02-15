@@ -25,6 +25,7 @@ from eeg_processor import (
     ATTENTION_THRESHOLD, MEDITATION_THRESHOLD, BLINK_THRESHOLD,
     SERIAL_PORT,
 )
+from eeg_stream import UDPBroadcaster
 import bt_reset
 
 # ── Configuration ───────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ proc = None                # current EEGProcessor instance
 _last_data_time = 0.0      # wall-clock time of last eSense callback
 _reconnecting = False
 _reconnect_msg = ""
+stream = UDPBroadcaster()
 
 
 # ── EEGProcessor callbacks ─────────────────────────────────────────────────
@@ -63,6 +65,16 @@ def on_data(attn, med, sig, blink, state):
     blink_hist.append(blink)
     state_hist.append(state)
     _last_data_time = time.time()
+    stream.send(
+        {
+            "ts": _last_data_time,
+            "attention": float(attn),
+            "meditation": float(med),
+            "signal": int(sig),
+            "blink": int(blink),
+            "state": state,
+        }
+    )
     on_waves()  # keep wave_hists in sync with timestamps
 
 
@@ -362,3 +374,4 @@ if __name__ == "__main__":
 
     # Cleanup after window closed
     _stop_processor()
+    stream.close()
