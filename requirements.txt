@@ -8,3 +8,4 @@ mediapipe
 matplotlib
 numpy
 pyserial
+ultralytics
