@@ -23,8 +23,8 @@ FOCUS_SEARCH_THRESHOLD = float(os.environ.get("FOCUS_SEARCH_THRESHOLD", "40"))
 EEG_STALE_S = float(os.environ.get("EEG_STALE_S", "3.0"))
 
 # ---------- SEARCH SWEEP ----------
-ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "0"))
-ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "80"))
+ROTATION_MIN = int(os.environ.get("ROTATION_MIN", "30"))
+ROTATION_MAX = int(os.environ.get("ROTATION_MAX", "150"))
 ROTATION_STEP = int(os.environ.get("ROTATION_STEP", "1"))
 SWEEP_INTERVAL_S = float(os.environ.get("SWEEP_INTERVAL_S", "0.3"))
 
